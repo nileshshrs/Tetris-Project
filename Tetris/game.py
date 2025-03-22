@@ -205,7 +205,7 @@ class Tetrominos:
 
     def rotate(self):
         if self.shape != "O":  # O shape doesn't rotate
-            pivot = self.blocks[0].pos
+            pivot = self.blocks[0].pos  # Rotate around the first block (pivot)
 
             # Step 1: Default rotation (without collision handling)
             new_positions = [block.rotate(pivot) for block in self.blocks]
@@ -218,45 +218,34 @@ class Tetrominos:
                     collision_detected = True
                     break
 
-            # Step 3: If no collision, apply default rotation
+            # Step 3: If no collision, apply the rotation
             if not collision_detected:
                 for i, block in enumerate(self.blocks):
                     block.pos = new_positions[i]
             else:
-                # Collision handling: Adjust the rotation to resolve the collision
-                new_positions_collision = []
-                for block in self.blocks:
-                    x, y = block.pos - pivot
-                    new_x = -y
-                    new_y = x
-                    new_positions_collision.append(pivot + pygame.Vector2(new_x, new_y))
-
-                # Adjust for boundary collisions
-                min_x = min(pos.x for pos in new_positions_collision)
-                max_x = max(pos.x for pos in new_positions_collision)
-                min_y = min(pos.y for pos in new_positions_collision)
-                max_y = max(pos.y for pos in new_positions_collision)
-
-                if min_x < 0:
-                    for i in range(len(new_positions_collision)):
-                        new_positions_collision[i].x -= min_x
-                if max_x >= COLUMNS:
-                    for i in range(len(new_positions_collision)):
-                        new_positions_collision[i].x -= (max_x - COLUMNS + 1)
-                if min_y < 0:
-                    for i in range(len(new_positions_collision)):
-                        new_positions_collision[i].y -= min_y
-                if max_y >= ROWS:
-                    for i in range(len(new_positions_collision)):
-                        new_positions_collision[i].y -= (max_y - ROWS + 1)
-
-                # Apply the adjusted positions
-                for i, block in enumerate(self.blocks):
-                    block.pos = new_positions_collision[i]
-
-                # After handling the collision, next rotation should go back to default behavior
-                # This will happen automatically the next time rotate() is called
-
+                # Handle collisions (e.g., wall kicks)
+                shifted_positions = None
+                for dx in [-1, 1]:  # Try shifting left or right by 1 unit
+                    temp_positions = [pygame.Vector2(pos.x + dx, pos.y) for pos in new_positions]
+                    
+                    # Check if the shifted positions are valid
+                    valid_shift = True
+                    for pos in temp_positions:
+                        x, y = int(pos.x), int(pos.y)
+                        if y >= ROWS or x < 0 or x >= COLUMNS or (y >= 0 and self.game_data[y][x]):
+                            valid_shift = False
+                            break
+                    
+                    if valid_shift:
+                        shifted_positions = temp_positions
+                        break
+                
+                # Apply the shift if valid, otherwise cancel rotation
+                if shifted_positions:
+                    for i, block in enumerate(self.blocks):
+                        block.pos = shifted_positions[i]
+                else:
+                    return  # Cancel the rotation
         
 
 class Block(pygame.sprite.Sprite):
