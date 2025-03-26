@@ -50,8 +50,8 @@ class Game:
             x, y = int(block.pos.x), int(block.pos.y)
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
-            else:
-                print(f"Block position out of bounds - x: {x}, y: {y}")
+            # else:
+               # print(f"Block position out of bounds - x: {x}, y: {y}")
 
         # Create a new tetromino
         self.create_new_tetromino()
@@ -120,13 +120,15 @@ class Game:
  
 
     def check_finished_rows(self):
-        # Identify full rows to delete
-        delete_rows = []
-        for i, row in enumerate(self.game_data):
-            if all(row):  # This checks if the row is completely filled
-                delete_rows.append(i)
+        while True:  # Continue checking until no more rows are cleared
+            delete_rows = []
+            for i, row in enumerate(self.game_data):
+                if all(row):  # This checks if the row is completely filled
+                    delete_rows.append(i)
 
-        if delete_rows:
+            if not delete_rows:
+                break  # If no rows are completed, stop checking
+
             # Remove full rows and shift rows above down
             for delete_row in reversed(delete_rows):
                 # Delete the blocks in the full row
@@ -151,6 +153,7 @@ class Game:
                 x, y = int(block.pos.x), int(block.pos.y)
                 new_game_data[y][x] = block
             self.game_data = new_game_data
+
 
 
 
@@ -205,7 +208,10 @@ class Tetrominos:
 
     def rotate(self):
         if self.shape != "O":  # O shape doesn't rotate
-            pivot = self.blocks[0].pos  # Rotate around the first block (pivot)
+            if self.shape == "I":
+                pivot = self.blocks[1].pos  # Use the second block as pivot for "I"
+            else:
+                pivot = self.blocks[0].pos  # Default pivot for other shapes
 
             # Step 1: Default rotation (without collision handling)
             new_positions = [block.rotate(pivot) for block in self.blocks]
@@ -223,11 +229,13 @@ class Tetrominos:
                 for i, block in enumerate(self.blocks):
                     block.pos = new_positions[i]
             else:
-                # Handle collisions (e.g., wall kicks)
+                # Handle collisions (wall kicks)
                 shifted_positions = None
-                for dx in [-1, 1]:  # Try shifting left or right by 1 unit
+                wall_kicks = [-2, -1, 1, 2] if self.shape == "I" else [-1, 1]  # I needs bigger shifts
+
+                for dx in wall_kicks:
                     temp_positions = [pygame.Vector2(pos.x + dx, pos.y) for pos in new_positions]
-                    
+
                     # Check if the shifted positions are valid
                     valid_shift = True
                     for pos in temp_positions:
@@ -235,18 +243,18 @@ class Tetrominos:
                         if y >= ROWS or x < 0 or x >= COLUMNS or (y >= 0 and self.game_data[y][x]):
                             valid_shift = False
                             break
-                    
+
                     if valid_shift:
                         shifted_positions = temp_positions
                         break
-                
+
                 # Apply the shift if valid, otherwise cancel rotation
                 if shifted_positions:
                     for i, block in enumerate(self.blocks):
                         block.pos = shifted_positions[i]
                 else:
                     return  # Cancel the rotation
-        
+
 
 class Block(pygame.sprite.Sprite):
     def __init__(self, group, pos, color):
@@ -260,7 +268,7 @@ class Block(pygame.sprite.Sprite):
 
         #position
         self.pos = pygame.Vector2(pos) + BLOCK_OFFSET
-        print(f"Block position - x: {self.pos.x}, y: {self.pos.y}")
+        # print(f"Block position - x: {self.pos.x}, y: {self.pos.y}")
 
         self.rect = self.image.get_rect(topleft = self.pos * CELL_SIZE)
 

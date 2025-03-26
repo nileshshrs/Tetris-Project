@@ -39,13 +39,13 @@ colors = [YELLOW, RED, BLUE, GREEN, PURPLE, CYAN, ORANGE]
 
 # shapes
 TETROMINOS = {
-    'T': {'shape': [(0,0), (-1,0), (1,0), (0,-1)], 'color': random.choice(colors)},
-    'O': {'shape': [(0,0), (0,-1), (1,0), (1,-1)], 'color': random.choice(colors)},
-    'J': {'shape': [(0,1), (1,1), (2,1), (2,0)], 'color': random.choice(colors)},
-    'L': {'shape': [(0,0), (1,0), (2,0), (2,1)], 'color': random.choice(colors)},
-    'I': {'shape': [(0,0), (1,0), (2,0), (3,0)], 'color': random.choice(colors)},
-    'S': {'shape': [(0,0), (-1,0), (0,-1), (1,-1)], 'color': random.choice(colors)},
-    'Z': {'shape': [(0,0), (1,0), (0,-1), (-1,-1)], 'color': random.choice(colors)}
+    'T': {'shape': [(0,0), (-1,0), (1,0), (0,-1)], 'color': PURPLE },
+    'O': {'shape': [(0,0), (0,-1), (1,0), (1,-1)], 'color': YELLOW},
+    'J': {'shape': [(0,1), (1,1), (2,1), (2,0)], 'color': ORANGE},
+    'L': {'shape': [(0,0), (1,0), (2,0), (2,1)], 'color': BLUE},
+    'I': {'shape': [(0,0), (1,0), (2,0), (3,0)], 'color': CYAN},
+    'S': {'shape': [(0,0), (-1,0), (0,-1), (1,-1)], 'color': GREEN},
+    'Z': {'shape': [(0,0), (1,0), (0,-1), (-1,-1)], 'color': RED}
 }
 
 SCORE_DATA = {1: 40, 2: 100, 3: 300, 4: 1200}

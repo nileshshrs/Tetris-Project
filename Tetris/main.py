@@ -32,7 +32,7 @@ class Main :
         next_shape = self.next_shapes.pop(0)
         self.new_shape= next_shape  # Get the next shape
 
-        print("firlst shape is f{next_shape}")
+        # print("firlst shape is f{next_shape}")
         self.next_shapes.append(get_next_tetromino(self.bag))  # Add a new shape from the bag to the end
         return next_shape
     
