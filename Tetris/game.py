@@ -231,7 +231,13 @@ class Tetrominos:
             else:
                 # Handle collisions (wall kicks)
                 shifted_positions = None
-                wall_kicks = [-2, -1, 1, 2] if self.shape == "I" else [-1, 1]  # I needs bigger shifts
+                if self.shape == "I":
+                    wall_kicks = [-2, -1, 1, 2]  # I needs bigger shifts
+                elif self.shape == "L" or self.shape == "J":
+                    # L and J shapes have a specific kick pattern
+                    wall_kicks = [-1, 1]  # These shapes need to shift by 1 or -1
+                else:
+                    wall_kicks = [-1, 1]  # Default shift pattern for other shapes
 
                 for dx in wall_kicks:
                     temp_positions = [pygame.Vector2(pos.x + dx, pos.y) for pos in new_positions]
@@ -254,6 +260,7 @@ class Tetrominos:
                         block.pos = shifted_positions[i]
                 else:
                     return  # Cancel the rotation
+
 
 
 class Block(pygame.sprite.Sprite):
