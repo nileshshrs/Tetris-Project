@@ -22,7 +22,7 @@ class Main :
 
         self.game = Game(self.get_next_shape)
         self.score=Score()
-        self.preview = Preview(self.next_shapes)
+        self.preview = Preview()
 
   
         # print(self.next_shapes)
@@ -49,7 +49,7 @@ class Main :
             #components
             self.game.run()
             self.score.run()
-            self.preview.run()
+            self.preview.run(self.next_shapes)
 
             #update the game
             pygame.display.update()
