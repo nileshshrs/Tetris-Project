@@ -15,7 +15,7 @@ SCORE_HEIGHT_FRACTION = 1 - PREVIEW_HEIGHT_FRACTION
 
 # window
 PADDING = 20
-WINDOW_WIDTH = GAME_WIDTH + SIDEBAR_WIDTH + PADDING * 3
+WINDOW_WIDTH =SIDEBAR_WIDTH + GAME_WIDTH + SIDEBAR_WIDTH + PADDING * 3
 WINDOW_HEIGHT = GAME_HEIGHT + PADDING * 2
 
 # game behaviour 
@@ -41,8 +41,8 @@ colors = [YELLOW, RED, BLUE, GREEN, PURPLE, CYAN, ORANGE]
 TETROMINOS = {
     'T': {'shape': [(0,0), (-1,0), (1,0), (0,-1)], 'color': PURPLE },
     'O': {'shape': [(0,0), (0,-1), (1,0), (1,-1)], 'color': YELLOW},
-    'J': {'shape': [(0,1), (1,1), (2,1), (2,0)], 'color': ORANGE},
-    'L': {'shape': [(0,0), (1,0), (2,0), (2,1)], 'color': BLUE},
+    'J': {'shape': [(0,1), (1,1), (2,1), (2,0)], 'color': BLUE},
+    'L': {'shape': [(0,0), (1,0), (2,0), (2,1)], 'color': ORANGE},
     'I': {'shape': [(0,0), (1,0), (2,0), (3,0)], 'color': CYAN},
     'S': {'shape': [(0,0), (-1,0), (0,-1), (1,-1)], 'color': GREEN},
     'Z': {'shape': [(0,0), (1,0), (0,-1), (-1,-1)], 'color': RED}

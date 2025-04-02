@@ -3,10 +3,10 @@ from timers import Timer
 
 
 class Game: 
-    def __init__(self, get_next_shape):
+    def __init__(self, get_next_shape, update_score):
         self.surface = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
         self.display_surface = pygame.display.get_surface()
-        self.rect = self.surface.get_rect(topleft = (PADDING, PADDING))
+        self.rect = self.surface.get_rect(topleft = (SIDEBAR_WIDTH+PADDING, PADDING))
         self.sprites = pygame.sprite.Group()
         #lines transparency
         self.line_surface = self.surface.copy()
@@ -20,6 +20,8 @@ class Game:
         self.hard_drop_in_progress = False
         self.current_bag = create_weighted_bag()
         self.get_next_shape = get_next_shape
+        
+        self.update_score = update_score
 
         #tetromino
         self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
@@ -43,6 +45,15 @@ class Game:
     def calculate_score(self, lines_cleared):
         self.current_lines += lines_cleared
         print(f'Lines cleared: {self.current_lines}')
+        self.current_score += SCORE_DATA[lines_cleared] * self.current_level
+        print(f'Score: {self.current_score}') 
+
+        # Every 10 lines, increase the level by 1
+        if self.current_lines / 10 > self.current_level:
+            self.current_level += 1
+            print(f'Level: {self.current_level}')
+
+        self.update_score(self.current_lines, self.current_score, self.current_level)
 
     def move_down(self):
         #print("timers")
@@ -168,7 +179,7 @@ class Game:
         self.surface.fill(GRAY)
         self.sprites.draw(self.surface)
         self.draw_grid()
-        self.display_surface.blit(self.surface, (PADDING, PADDING)) #block image transfer
+        self.display_surface.blit(self.surface, (SIDEBAR_WIDTH+PADDING, PADDING)) #block image transfer
         pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)
 
 

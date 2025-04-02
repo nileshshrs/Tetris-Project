@@ -16,17 +16,18 @@ class Preview:
         }
 
         # Positioning settings
-        self.increment_height = self.surface.get_height() // 3
+        self.top_padding = 20  # Extra space at the top
+        self.increment_height = (self.surface.get_height() - self.top_padding) // 3
 
     def display_pieces(self, shapes):
         for i, shape in enumerate(shapes):
             shape_surface = self.shape_surfaces[shape]
-            shape_rect = shape_surface.get_rect()  
+            shape_rect = shape_surface.get_rect()
 
             # Center horizontally
             x = (self.surface.get_width() - shape_rect.width) // 2  
-            # Adjust vertical positioning
-            y = (self.increment_height - shape_rect.height) // 2 + i * self.increment_height  
+            # Adjust vertical positioning with padding
+            y = self.top_padding + (self.increment_height - shape_rect.height) // 2 + i * self.increment_height  
 
             # Update the rect position
             shape_rect.topleft = (x, y)
@@ -36,4 +37,4 @@ class Preview:
         self.surface.fill(GRAY)  # Fill the surface with a background color
         self.display_pieces(next_shapes)
         self.display_surface.blit(self.surface, self.rect)  # Blit the surface to the display surface
-        pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)  # Draw a border
+        # pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)  # Draw a border
