@@ -36,6 +36,14 @@ class Game:
         }
         self.timerss['vertical move'].activate()
 
+        self.current_score =  0
+        self.current_level = 1
+        self.current_lines = 0
+
+    def calculate_score(self, lines_cleared):
+        self.current_lines += lines_cleared
+        print(f'Lines cleared: {self.current_lines}')
+
     def move_down(self):
         #print("timers")
         self.tetromino.move_down()
@@ -120,42 +128,34 @@ class Game:
  
 
     def check_finished_rows(self):
-        while True:  # Continue checking until no more rows are cleared
+
+            # get the full row indexes 
             delete_rows = []
             for i, row in enumerate(self.game_data):
-                if all(row):  # This checks if the row is completely filled
+                if all(row):
                     delete_rows.append(i)
 
-            if not delete_rows:
-                break  # If no rows are completed, stop checking
+            if delete_rows:
+                for delete_row in delete_rows:
 
-            # Remove full rows and shift rows above down
-            for delete_row in reversed(delete_rows):
-                # Delete the blocks in the full row
-                for block in self.game_data[delete_row]:
-                    if block:
+                    # delete full rows
+                    for block in self.game_data[delete_row]:
                         block.kill()
 
-                # Shift all rows above down by one
-                for y in range(delete_row, 0, -1):
-                    for x in range(COLUMNS):
-                        self.game_data[y][x] = self.game_data[y - 1][x]
-                        if self.game_data[y][x]:
-                            self.game_data[y][x].pos.y += 1
+                    # move down blocks
+                    for row in self.game_data:
+                        for block in row:
+                            if block and block.pos.y < delete_row:
+                                block.pos.y += 1
 
-                # Clear the top row as it's moved down
-                for x in range(COLUMNS):
-                    self.game_data[0][x] = 0
+                # rebuild the game data 
+                self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
+                for block in self.sprites:
+                    self.game_data[int(block.pos.y)][int(block.pos.x)] = block
 
-            # Rebuild the game_data array based on the updated positions of blocks
-            new_game_data = [[0 for _ in range(COLUMNS)] for _ in range(ROWS)]
-            for block in self.sprites:
-                x, y = int(block.pos.x), int(block.pos.y)
-                new_game_data[y][x] = block
-            self.game_data = new_game_data
-
-
-
+                #update score
+                self.calculate_score(len(delete_rows))
+			    
 
 
     def run(self):
@@ -233,9 +233,11 @@ class Tetrominos:
                 shifted_positions = None
                 if self.shape == "I":
                     wall_kicks = [-2, -1, 1, 2]  # I needs bigger shifts
-                elif self.shape == "L" or self.shape == "J":
+                elif self.shape == "L"  :
                     # L and J shapes have a specific kick pattern
-                    wall_kicks = [-1, 1]  # These shapes need to shift by 1 or -1
+                    wall_kicks = [-1, 1] 
+                elif self.shape == "J":
+                    wall_kicks = [2, -2]
                 else:
                     wall_kicks = [-1, 1]  # Default shift pattern for other shapes
 
