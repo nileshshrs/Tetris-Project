@@ -12,7 +12,7 @@ class Score:
 
         # Font
         BASE_DIR = path.dirname(path.abspath(__file__))
-        self.font = pygame.font.Font(path.join(BASE_DIR, "assets", "graphics", "Russo_One.ttf"), 30)
+        self.font = pygame.font.Font(path.join(BASE_DIR, "assets", "graphics", "Russo_One.ttf"), 20)
 
         # Increase spacing to push everything down a bit
         self.top_padding = 20  
@@ -51,4 +51,7 @@ class Score:
             self.display_text((x, y_value), str(value))  # Draw value below label
 
         # Draw the score display on the main screen
+        pygame.draw.rect(self.surface, LINE_COLOR, self.rect, 2) 
         self.display_surface.blit(self.surface, self.rect)
+        # pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)  # Draw a border
+

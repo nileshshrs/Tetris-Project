@@ -3,10 +3,10 @@ from timers import Timer
 
 
 class Game: 
-    def __init__(self, get_next_shape, update_score):
+    def __init__(self, get_next_shape, update_score, get_held_shape):
         self.surface = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
         self.display_surface = pygame.display.get_surface()
-        self.rect = self.surface.get_rect(topleft = (SIDEBAR_WIDTH+PADDING, PADDING))
+        self.rect = self.surface.get_rect(topleft = (PADDING+SIDEBAR_WIDTH+PADDING, PADDING))
         self.sprites = pygame.sprite.Group()
         #lines transparency
         self.line_surface = self.surface.copy()
@@ -20,8 +20,11 @@ class Game:
         self.hard_drop_in_progress = False
         self.current_bag = create_weighted_bag()
         self.get_next_shape = get_next_shape
+        self.get_held_shape = get_held_shape
         
         self.update_score = update_score
+        self.is_held = False
+        self.held_piece = None
 
         #tetromino
         self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
@@ -54,6 +57,39 @@ class Game:
             print(f'Level: {self.current_level}')
 
         self.update_score(self.current_lines, self.current_score, self.current_level)
+
+    def hold_piece(self):
+        if not self.is_held:  # Only allow holding once per piece drop
+            if self.held_piece is None:
+                # Store the current tetromino shape in held_piece
+                self.held_piece = self.tetromino.shape
+                new_shape = self.get_next_shape()  # Generate a new shape
+                
+
+            else:
+                # Swap the current tetromino with the held piece
+                new_shape = self.held_piece
+                self.held_piece = self.tetromino.shape
+
+            self.get_held_shape(self.held_piece)  # Call the function to get the held shape
+            self.is_held = True  # Prevent multiple holds in one drop
+
+            # Clear the current tetromino from the board
+            for block in self.tetromino.blocks:
+                x, y = int(block.pos.x), int(block.pos.y)
+                if 0 <= x < COLUMNS and 0 <= y < ROWS:
+                    self.game_data[y][x] = 0
+                block.kill()
+
+            # Create a new tetromino based on the swapped piece
+            self.tetromino = Tetrominos(
+                new_shape, 
+                self.sprites, 
+                self.create_new_tetromino, 
+                self.game_data
+            )
+
+
 
     def move_down(self):
         #print("timers")
@@ -136,6 +172,9 @@ class Game:
                 self.tetromino.rotate()
                 self.timerss["rotate"].activate()
         
+        if not self.is_held:
+            if keys[pygame.K_c]:
+                self.hold_piece()
  
 
     def check_finished_rows(self):
@@ -179,7 +218,7 @@ class Game:
         self.surface.fill(GRAY)
         self.sprites.draw(self.surface)
         self.draw_grid()
-        self.display_surface.blit(self.surface, (SIDEBAR_WIDTH+PADDING, PADDING)) #block image transfer
+        self.display_surface.blit(self.surface, (PADDING+SIDEBAR_WIDTH+PADDING, PADDING)) #block image transfer
         pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)
 
 
