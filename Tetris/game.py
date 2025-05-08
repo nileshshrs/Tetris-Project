@@ -14,8 +14,10 @@ class Game:
         self.line_surface.set_colorkey((0,255,0))
         self.line_surface.set_alpha(120)
 
+        ## timer settings are here 
         self.drop_speed = UPDATE_START_SPEED
         self.fast_drop_speed = UPDATE_START_SPEED * 0.1  # Speed when the down key is pressed
+        ## timer settings are here 
         self.is_fast_drop = False  # Flag to track down key press
         self.hard_drop_in_progress = False
         self.current_bag = create_weighted_bag()
@@ -51,12 +53,35 @@ class Game:
         self.current_score += SCORE_DATA[lines_cleared] * self.current_level
         print(f'Score: {self.current_score}') 
 
-        # Every 10 lines, increase the level by 1
         if self.current_lines / 10 > self.current_level:
             self.current_level += 1
-            print(f'Level: {self.current_level}')
+
+            # Frame progression based on new table of frame times (linear drop speeds)
+            level_to_frames = {
+                1: 48, 2: 48, 3: 43, 4: 38, 5: 33, 6: 28, 7: 23, 8: 18, 9: 13,
+                10: 8, 11: 6, 12: 5, 13: 4, 14: 4, 15: 4, 16: 3, 17: 3, 18: 3,
+                19: 2, 20: 2, 21: 2, 22: 2, 23: 2, 24: 2, 25: 2, 26: 2, 27: 2, 28: 2, 29: 1
+            }
+
+            # Get the frame count for the current level
+            frames = level_to_frames.get(self.current_level, 1)
+
+            # Convert the frame count to a drop speed (in ms per row)
+            # Since the default speed at level 1 is 800 ms per row (48 frames), we will convert the frames to ms
+            base_frames = 48  # Level 1 starts with 48 frames
+
+            # Calculate the new drop speed for the current level
+            self.drop_speed = (frames / base_frames) * UPDATE_START_SPEED # Adjust drop speed for the current level
+
+            # 🔥 Apply the new drop speed to the timer immediately
+            if not self.is_fast_drop:
+                self.timerss['vertical move'].set_interval(self.drop_speed)
+
+            print(f'Level: {self.current_level}, speed: {self.drop_speed}ms per row')
+
 
         self.update_score(self.current_lines, self.current_score, self.current_level)
+
 
     def hold_piece(self):
         if not self.is_held:  # Only allow holding once per piece drop
@@ -110,6 +135,7 @@ class Game:
 
         # Create a new tetromino
         self.create_new_tetromino()
+        self.timerss['vertical move'].set_interval(self.drop_speed)
     #create new tetromino
     def create_new_tetromino(self):
         self.check_finished_rows()
@@ -147,6 +173,7 @@ class Game:
                 # Revert to original drop speed if down key is not pressed
                 self.is_fast_drop = False 
                 self.timerss['vertical move'].set_interval(self.drop_speed)
+
         
 
         if not self.timerss['horizontal move'].active:
@@ -164,6 +191,7 @@ class Game:
             if not self.hard_drop_in_progress:
                 self.hard_drop_in_progress = True
                 self.perform_hard_drop()
+            
         else:
             self.hard_drop_in_progress = False
 

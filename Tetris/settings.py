@@ -48,7 +48,7 @@ TETROMINOS = {
     'Z': {'shape': [(0,0), (1,0), (0,-1), (-1,-1)], 'color': RED}
 }
 
-SCORE_DATA = {1: 40, 2: 100, 3: 300, 4: 1200}
+SCORE_DATA = {1: 100, 2: 300, 3: 500, 4: 1200}
 
 TETROMINOS_WEIGHTS = {
     'T': 14.6,
