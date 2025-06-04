@@ -2,6 +2,7 @@ from settings import *
 from sys import exit
 import time
 
+
 # Components
 from game import Game
 from score import Score

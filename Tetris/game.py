@@ -1,6 +1,13 @@
 from settings import *
 from timers import Timer
 
+#ai part
+import sys
+import os
+sys.path.append(os.path.abspath('.'))
+from AI.TetrisAI import TetrisAI 
+#ai part
+
 
 class Game: 
     def __init__(self, get_next_shape, update_score, get_held_shape):
@@ -51,7 +58,9 @@ class Game:
         self.current_score =  0
         self.current_level = 1
         self.current_lines = 0
-
+        #ai part
+        self.ai = TetrisAI(self) 
+        #ai part
         self.is_game_over = False
 
     def calculate_score(self, lines_cleared):
@@ -266,6 +275,9 @@ class Game:
     def run(self):
         # === Update Section ===
         self.input()
+        #ai part
+        self.ai.update() 
+        #ai part
         self.timers_update()
         self.sprites.update()
 
