@@ -1,5 +1,6 @@
 from settings import *
 from sys import exit
+import time
 
 # Components
 from game import Game
@@ -49,20 +50,37 @@ class Main:
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     exit()
-                    
-            # Display
+
             self.display_surface.fill(GRAY)
 
-            # Components
+            if self.game.is_game_over:
+                if self.score.frozen_time is None:
+                    self.score.frozen_time = int(time.time() - self.score.start_time)
+                # 🔒 Don't run any game logic, just redraw the last visual state
+                self.score.run()
+                self.lines.run()
+                self.preview.run(self.next_shapes)  # Keep showing next_shapes
+                self.held.run()
+
+                # Optional: Show "Game Over"
+                font = pygame.font.SysFont("arial", 48, bold=True)
+                text = font.render("GAME OVER", True, (255, 0, 0))
+                text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+                self.display_surface.blit(text, text_rect)
+
+                pygame.display.update()
+                self.clock.tick(60)
+                continue
+
+            # Normal game loop
             self.game.run()
             self.score.run()
-            self.lines.run()  # Fixed: Running Lines component
+            self.lines.run()
             self.preview.run(self.next_shapes)
             self.held.run()
 
-            # Update the game
             pygame.display.update()
-            self.clock.tick()
+            self.clock.tick(60)
 
 if __name__ == "__main__":
     main = Main()

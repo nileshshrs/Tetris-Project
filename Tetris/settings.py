@@ -23,6 +23,7 @@ UPDATE_START_SPEED = 800
 MOVE_WAIT_TIME = 150
 ROTATE_WAIT_TIME = 170
 BLOCK_OFFSET = pygame.Vector2((COLUMNS // 2)-1, -1)
+LOCK_DELAY_TIME = 500  # in milliseconds
 
 # Colors 
 YELLOW = '#f1e60d'

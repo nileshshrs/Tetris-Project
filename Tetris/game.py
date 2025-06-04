@@ -28,6 +28,7 @@ class Game:
         self.is_held = False
         self.held_piece = None
 
+
         #tetromino
         self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
         self.tetromino = Tetrominos(
@@ -39,13 +40,19 @@ class Game:
         self.timerss= {
             'vertical move':  Timer(UPDATE_START_SPEED, True, self.move_down),
             'horizontal move': Timer(MOVE_WAIT_TIME),
-            'rotate': Timer(ROTATE_WAIT_TIME)
+            'rotate': Timer(ROTATE_WAIT_TIME),
+            'lock delay': Timer(LOCK_DELAY_TIME, False, self.lock_tetromino)  # 🔥 New timer
         }
         self.timerss['vertical move'].activate()
+
+        self.lock_timer_active = False
+        self.tetromino_touching_floor = False 
 
         self.current_score =  0
         self.current_level = 1
         self.current_lines = 0
+
+        self.is_game_over = False
 
     def calculate_score(self, lines_cleared):
         self.current_lines += lines_cleared
@@ -84,36 +91,30 @@ class Game:
 
 
     def hold_piece(self):
-        if not self.is_held:  # Only allow holding once per piece drop
+        if not self.is_held:
             if self.held_piece is None:
-                # Store the current tetromino shape in held_piece
                 self.held_piece = self.tetromino.shape
-                new_shape = self.get_next_shape()  # Generate a new shape
-                
-
+                new_shape = self.get_next_shape()
             else:
-                # Swap the current tetromino with the held piece
-                new_shape = self.held_piece
-                self.held_piece = self.tetromino.shape
+                new_shape, self.held_piece = self.held_piece, self.tetromino.shape
 
-            self.get_held_shape(self.held_piece)  # Call the function to get the held shape
-            self.is_held = True  # Prevent multiple holds in one drop
+            self.get_held_shape(self.held_piece)
+            self.is_held = True
 
-            # Clear the current tetromino from the board
+            # Clear current tetromino
             for block in self.tetromino.blocks:
                 x, y = int(block.pos.x), int(block.pos.y)
                 if 0 <= x < COLUMNS and 0 <= y < ROWS:
                     self.game_data[y][x] = 0
                 block.kill()
 
-            # Create a new tetromino based on the swapped piece
+            # New tetromino from held or queue
             self.tetromino = Tetrominos(
-                new_shape, 
-                self.sprites, 
-                self.create_new_tetromino, 
+                new_shape,
+                self.sprites,
+                self.create_new_tetromino,
                 self.game_data
             )
-
 
 
     def move_down(self):
@@ -138,13 +139,30 @@ class Game:
         self.timerss['vertical move'].set_interval(self.drop_speed)
     #create new tetromino
     def create_new_tetromino(self):
+        if self.is_game_over:
+            return  # Don't spawn any more pieces
+
         self.check_finished_rows()
-        self.tetromino= Tetrominos(
-            self.get_next_shape(), 
-            self.sprites, 
+
+        # Try to spawn the next tetromino safely
+        new_shape = self.get_next_shape()
+        temp_tetromino = Tetrominos(
+            new_shape,
+            self.sprites,
             self.create_new_tetromino,
-            self.game_data)
-        
+            self.game_data
+        )
+
+        # Check for collision at spawn position
+        for block in temp_tetromino.blocks:
+            x, y = int(block.pos.x), int(block.pos.y)
+            if y >= 0 and self.game_data[y][x]:
+                self.is_game_over = True
+                return  # Stop here, don't assign the tetromino
+
+        # No collision: assign it as the active tetromino
+        self.tetromino = temp_tetromino
+
   
     def timers_update(self):
        for timerss in self.timerss.values():
@@ -195,59 +213,92 @@ class Game:
         else:
             self.hard_drop_in_progress = False
 
-        if not self.timerss['rotate'].active:
-            if keys[pygame.K_c] or keys[pygame.K_UP]:
-                self.tetromino.rotate()
-                self.timerss["rotate"].activate()
-        
-        if not self.is_held:
-            if keys[pygame.K_c]:
+            if not self.timerss['rotate'].active:
+                if keys[pygame.K_UP]:
+                    self.tetromino.rotate()
+                    self.timerss["rotate"].activate()
+
+            if keys[pygame.K_c] and not self.is_held:
                 self.hold_piece()
  
-
     def check_finished_rows(self):
+        # Step 1: Identify full rows
+        delete_rows = [i for i, row in enumerate(self.game_data) if all(row)]
 
-            # get the full row indexes 
-            delete_rows = []
-            for i, row in enumerate(self.game_data):
-                if all(row):
-                    delete_rows.append(i)
+        if not delete_rows:
+            return
 
-            if delete_rows:
-                for delete_row in delete_rows:
+        # Step 2: Kill blocks in full rows
+        for row_idx in delete_rows:
+            for block in self.game_data[row_idx]:
+                if block:
+                    block.kill()
 
-                    # delete full rows
-                    for block in self.game_data[delete_row]:
-                        block.kill()
+        # Step 3: Shift down rows above each cleared line
+        for row_idx in sorted(delete_rows):
+            for y in range(row_idx - 1, -1, -1):  # From the row above down to top
+                for x in range(COLUMNS):
+                    block = self.game_data[y][x]
+                    if block:
+                        block.pos.y += 1
+                        self.game_data[y + 1][x] = block
+                        self.game_data[y][x] = 0  # Clear old position
 
-                    # move down blocks
-                    for row in self.game_data:
-                        for block in row:
-                            if block and block.pos.y < delete_row:
-                                block.pos.y += 1
+        # Step 4: Rebuild game_data from sprite positions to ensure consistency
+        self.game_data = [[0 for _ in range(COLUMNS)] for _ in range(ROWS)]
+        for block in self.sprites:
+            x, y = int(block.pos.x), int(block.pos.y)
+            if 0 <= x < COLUMNS and 0 <= y < ROWS:
+                self.game_data[y][x] = block
 
-                # rebuild the game data 
-                self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
-                for block in self.sprites:
-                    self.game_data[int(block.pos.y)][int(block.pos.x)] = block
+        # Step 5: Update score
+        self.calculate_score(len(delete_rows))
 
-                #update score
-                self.calculate_score(len(delete_rows))
-			    
+    def lock_tetromino(self):
+        for block in self.tetromino.blocks:
+            x, y = int(block.pos.x), int(block.pos.y)
+            if 0 <= x < COLUMNS and 0 <= y < ROWS:
+                self.game_data[y][x] = block
+        self.create_new_tetromino()
+        self.lock_timer_active = False
 
 
     def run(self):
-
-        #update 
+        # === Update Section ===
         self.input()
         self.timers_update()
         self.sprites.update()
-        #draw ink
+
+        # Lock delay check
+        if self.tetromino.next_move_vertical_collide(self.tetromino.blocks, 1):
+            if not self.lock_timer_active:
+                self.timerss['lock delay'].activate()
+                self.lock_timer_active = True
+        else:
+            if self.lock_timer_active:
+                self.timerss['lock delay'].deactivate()
+                self.lock_timer_active = False
+
+        # === Draw Section ===
         self.surface.fill(GRAY)
+
+        # 1. Draw ghost piece (before active tetromino so it appears behind)
+        ghost_positions = self.tetromino.get_ghost_positions()
+        for pos in ghost_positions:
+            ghost_rect = pygame.Rect(pos.x * CELL_SIZE, pos.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+            pygame.draw.rect(self.surface, (200, 200, 200), ghost_rect, 2)
+
+        # 2. Draw active blocks
         self.sprites.draw(self.surface)
+
+        # 3. Draw grid overlay
         self.draw_grid()
-        self.display_surface.blit(self.surface, (PADDING+SIDEBAR_WIDTH+PADDING, PADDING)) #block image transfer
+
+        # 4. Blit to screen
+        self.display_surface.blit(self.surface, self.rect.topleft)
         pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)
+
+
 
 
 class Tetrominos:
@@ -261,6 +312,9 @@ class Tetrominos:
         #create blocks
         self.blocks = [Block(group, pos, self.color) for pos in self.block_positions]
 
+        self.create_new_tetromino_called = False
+
+
     def next_move_horizontal_collide(self, blocks, amount):
         collision_list = [block.horizontal_collide(int(block.pos.x + amount), self.game_data) for block in self.blocks]
         return  any(collision_list)
@@ -273,73 +327,80 @@ class Tetrominos:
         if not self.next_move_horizontal_collide(self.blocks, amount):
             for block in self.blocks:
                 block.pos.x += amount
+            self.create_new_tetromino_called = False 
+
 
     def move_down(self):
-
         if not self.next_move_vertical_collide(self.blocks, 1):
             for block in self.blocks:
                 block.pos.y += 1
+            self.create_new_tetromino_called = False  # 🔄 Reset lock delay
         else:
-            for block in self.blocks:
-                self.game_data[int(block.pos.y)][int(block.pos.x)] = block
-            self.create_new_tetromino()
+            # Don't lock here — let Game handle it using lock timer
+            pass
+
 
     def rotate(self):
-        if self.shape != "O":  # O shape doesn't rotate
-            if self.shape == "I":
-                pivot = self.blocks[1].pos  # Use the second block as pivot for "I"
-            else:
-                pivot = self.blocks[0].pos  # Default pivot for other shapes
+        if self.shape == "O":
+            return  # O doesn't rotate
 
-            # Step 1: Default rotation (without collision handling)
-            new_positions = [block.rotate(pivot) for block in self.blocks]
+        # 1. Choose pivot block
+        pivot = self.blocks[1].pos if self.shape == "I" else self.blocks[0].pos
 
-            # Step 2: Check if rotation causes a collision
-            collision_detected = False
-            for pos in new_positions:
-                x, y = int(pos.x), int(pos.y)
-                if y >= ROWS or x < 0 or x >= COLUMNS or (y >= 0 and self.game_data[y][x]):
-                    collision_detected = True
-                    break
+        # 2. Rotate all blocks around the pivot
+        new_positions = [block.rotate(pivot) for block in self.blocks]
 
-            # Step 3: If no collision, apply the rotation
-            if not collision_detected:
+        # 3. Check for direct collision
+        if self._is_valid_position(new_positions):
+            for i, block in enumerate(self.blocks):
+                block.pos = new_positions[i]
+            self.create_new_tetromino_called = False  # 🔄 Reset lock delay
+            return
+
+        # 4. Try wall kicks
+        kick_offsets = [
+            (-1, 0), (1, 0), (-2, 0), (2, 0),
+            (0, -1), (0, 1),
+            (-1, -1), (1, -1), (-1, 1), (1, 1)
+        ]
+
+        for dx, dy in kick_offsets:
+            kicked_positions = [pygame.Vector2(pos.x + dx, pos.y + dy) for pos in new_positions]
+            if self._is_valid_position(kicked_positions):
                 for i, block in enumerate(self.blocks):
-                    block.pos = new_positions[i]
-            else:
-                # Handle collisions (wall kicks)
-                shifted_positions = None
-                if self.shape == "I":
-                    wall_kicks = [-2, -1, 1, 2]  # I needs bigger shifts
-                elif self.shape == "L"  :
-                    # L and J shapes have a specific kick pattern
-                    wall_kicks = [-1, 1] 
-                elif self.shape == "J":
-                    wall_kicks = [2, -2]
-                else:
-                    wall_kicks = [-1, 1]  # Default shift pattern for other shapes
+                    block.pos = kicked_positions[i]
+                self.create_new_tetromino_called = False  # 🔄 Reset lock delay
+                return
 
-                for dx in wall_kicks:
-                    temp_positions = [pygame.Vector2(pos.x + dx, pos.y) for pos in new_positions]
+        # 5. All kicks failed — cancel rotation
+        return
+    
+    def _is_valid_position(self, positions):
+        for pos in positions:
+            x, y = int(pos.x), int(pos.y)
+            if x < 0 or x >= COLUMNS or y >= ROWS:
+                return False
+            if y >= 0 and self.game_data[y][x]:  # Ignore off-screen negative y
+                return False
+        return True
 
-                    # Check if the shifted positions are valid
-                    valid_shift = True
-                    for pos in temp_positions:
-                        x, y = int(pos.x), int(pos.y)
-                        if y >= ROWS or x < 0 or x >= COLUMNS or (y >= 0 and self.game_data[y][x]):
-                            valid_shift = False
-                            break
 
-                    if valid_shift:
-                        shifted_positions = temp_positions
-                        break
+                
+    def get_ghost_positions(self):
+        # Copy positions of all blocks
+        ghost_blocks = [block.pos.copy() for block in self.blocks]
 
-                # Apply the shift if valid, otherwise cancel rotation
-                if shifted_positions:
-                    for i, block in enumerate(self.blocks):
-                        block.pos = shifted_positions[i]
-                else:
-                    return  # Cancel the rotation
+        while True:
+            # Check if moving down would cause collision
+            if any(
+                b.y + 1 >= ROWS or self.game_data[int(b.y + 1)][int(b.x)]
+                for b in ghost_blocks
+            ):
+                break  # landed
+            for b in ghost_blocks:
+                b.y += 1  # drop all ghost blocks by one
+
+        return ghost_blocks
 
 
 
@@ -366,17 +427,15 @@ class Block(pygame.sprite.Sprite):
 
         return new_position
 
-    def horizontal_collide(self, x, game_data ):
+    def horizontal_collide(self, x, game_data):
         if not 0 <= x < COLUMNS:
             return True
-        if game_data[int(self.pos.y)][x]:
-            return True
-    
+        return bool(game_data[int(self.pos.y)][x])
+
     def vertical_collide(self, y, game_data):
         if y >= ROWS:
             return True
-        if y >= 0 and game_data[y][int(self.pos.x)]:
-            return True
+        return bool(game_data[y][int(self.pos.x)]) if y >= 0 else False
         
     def update(self):
         self.rect.topleft=self.pos*CELL_SIZE
