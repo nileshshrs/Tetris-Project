@@ -27,7 +27,7 @@ class Game:
         ## timer settings are here 
         self.is_fast_drop = False  # Flag to track down key press
         self.hard_drop_in_progress = False
-        self.current_bag = create_weighted_bag()
+        self.current_bag = create_7bag()
         self.get_next_shape = get_next_shape
         self.get_held_shape = get_held_shape
         

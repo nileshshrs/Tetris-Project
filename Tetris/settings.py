@@ -76,48 +76,66 @@ TETROMINOS_WEIGHTS = {
 #     return bag.pop()
 
 
-def create_weighted_bag():
-    """Creates a weighted bag for Tetrominoes based on their weights, ensuring random distribution."""
-    bag = random.choices(
-        population=list(TETROMINOS_WEIGHTS.keys()),  # Tetromino names
-        weights=list(TETROMINOS_WEIGHTS.values()),  # Corresponding weights
-        k=14  # Choose a moderate number for the bag size (you can adjust this)
-    )
-    random.shuffle(bag)  # Shuffle to randomize the order
+# def create_weighted_bag():
+#     """Creates a weighted bag for Tetrominoes based on their weights, ensuring random distribution."""
+#     bag = random.choices(
+#         population=list(TETROMINOS_WEIGHTS.keys()),  # Tetromino names
+#         weights=list(TETROMINOS_WEIGHTS.values()),  # Corresponding weights
+#         k=14  # Choose a moderate number for the bag size (you can adjust this)
+#     )
+#     random.shuffle(bag)  # Shuffle to randomize the order
+#     return bag
+
+# def get_next_tetromino(bag, recent_shapes=[], max_streak=2):
+#     """Fetches the next Tetromino and prevents more than `max_streak` consecutive repeats."""
+#     if len(bag) == 0:  # If the bag is empty, refill it
+#         bag[:] = create_weighted_bag()  # Refill the bag
+
+#     # Select a pseudorandom piece from the bag based on weighted distribution
+#     next_piece = random.choices(
+#         population=list(TETROMINOS_WEIGHTS.keys()), 
+#         weights=list(TETROMINOS_WEIGHTS.values()),
+#         k=1
+#     )[0]
+
+#     # Ensure no streak of `max_streak` consecutive pieces
+#     while len(recent_shapes) >= max_streak and all(shape == next_piece for shape in recent_shapes[-max_streak:]):
+#         # Reshuffle the remaining bag if a streak of `max_streak` occurs
+#         random.shuffle(bag)
+#         next_piece = random.choices(
+#             population=list(TETROMINOS_WEIGHTS.keys()), 
+#             weights=list(TETROMINOS_WEIGHTS.values()), 
+#             k=1
+#         )[0]
+
+#     # Add the piece to recent history
+#     recent_shapes.append(next_piece)
+
+#     # Keep the recent shapes list size within `max_streak`
+#     if len(recent_shapes) > max_streak:
+#         recent_shapes.pop(0)
+
+#     return next_piece
+
+
+# # Initialize the bag with weighted tetrominoes
+# current_bag = create_weighted_bag()
+
+def create_7bag():
+    """Creates a fair 7-bag of tetromino names, each appearing exactly once, shuffled."""
+    bag = list(TETROMINOS.keys())
+    random.shuffle(bag)
     return bag
 
-def get_next_tetromino(bag, recent_shapes=[], max_streak=2):
-    """Fetches the next Tetromino and prevents more than `max_streak` consecutive repeats."""
-    if len(bag) == 0:  # If the bag is empty, refill it
-        bag[:] = create_weighted_bag()  # Refill the bag
+def get_next_tetromino(bag):
+    """
+    Fetches the next tetromino from the bag.
+    Refills and reshuffles the bag when empty.
+    Returns the name as before ('I', 'O', etc).
+    """
+    if not bag:
+        bag[:] = create_7bag()
+    return bag.pop()
 
-    # Select a pseudorandom piece from the bag based on weighted distribution
-    next_piece = random.choices(
-        population=list(TETROMINOS_WEIGHTS.keys()), 
-        weights=list(TETROMINOS_WEIGHTS.values()),
-        k=1
-    )[0]
-
-    # Ensure no streak of `max_streak` consecutive pieces
-    while len(recent_shapes) >= max_streak and all(shape == next_piece for shape in recent_shapes[-max_streak:]):
-        # Reshuffle the remaining bag if a streak of `max_streak` occurs
-        random.shuffle(bag)
-        next_piece = random.choices(
-            population=list(TETROMINOS_WEIGHTS.keys()), 
-            weights=list(TETROMINOS_WEIGHTS.values()), 
-            k=1
-        )[0]
-
-    # Add the piece to recent history
-    recent_shapes.append(next_piece)
-
-    # Keep the recent shapes list size within `max_streak`
-    if len(recent_shapes) > max_streak:
-        recent_shapes.pop(0)
-
-    return next_piece
-
-
-# Initialize the bag with weighted tetrominoes
-current_bag = create_weighted_bag()
-
+# Initialize the bag as usual
+current_bag = create_7bag()

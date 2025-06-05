@@ -51,7 +51,16 @@ class TetrisAI:
         best_rotation = 0
         best_dx = 0
 
-        for rotation_count in range(4):
+        # Determine unique rotations for the piece
+        shape = getattr(original, "shape", None)
+        if shape == "O":
+            max_rotations = 1
+        elif shape in ("I", "S", "Z"):
+            max_rotations = 2
+        else:
+            max_rotations = 4
+
+        for rotation_count in range(max_rotations):
             test_piece = self._clone_tetromino(original)
             for _ in range(rotation_count):
                 test_piece.rotate()
@@ -120,8 +129,15 @@ class TetrisAI:
                     if x == well_col and (y == self.rows - 1 or sim_board[y + 1][x]):
                         fills_well = True
                         break
-                if fills_well and well_depth >= 2 and lines_cleared == 0:
-                    continue  # Don't fill a deep well unless you clear a line
+
+                # Emergency override: allow filling well if stack is high
+                stack_too_high = any(
+                    any(cell for cell in sim_board[row])
+                    for row in range(12)
+                )
+
+                if fills_well and well_depth >= 2 and lines_cleared == 0 and not stack_too_high:
+                    continue  # Only avoid filling well if stack is safe
 
                 # Score as usual
                 score = -self._cost_function(
@@ -177,7 +193,16 @@ class TetrisAI:
         best_rotation = 0
         best_dx = 0
 
-        for rot in range(4):
+        # Determine unique rotations for the piece
+        shape = getattr(original, "shape", None)
+        if shape == "O":
+            max_rotations = 1
+        elif shape in ("I", "S", "Z"):
+            max_rotations = 2
+        else:
+            max_rotations = 4
+
+        for rot in range(max_rotations):
             piece = self._clone_tetromino(original)
             for _ in range(rot):
                 piece.rotate()
@@ -232,8 +257,14 @@ class TetrisAI:
                     if x == well_col and (y == self.rows - 1 or sim_board[y + 1][x]):
                         fills_well = True
                         break
-                if fills_well and well_depth >= 2 and lines_cleared == 0:
-                    continue  # Don't fill a deep well unless you clear a line
+
+                stack_too_high = any(
+                    any(cell for cell in sim_board[row])
+                    for row in range(12)
+                )
+
+                if fills_well and well_depth >= 2 and lines_cleared == 0 and not stack_too_high:
+                    continue  # Only avoid filling well if stack is safe
 
                 score = -self._cost_function(
                     sim_board, lines_cleared, difficult_lines_cleared
@@ -263,7 +294,7 @@ class TetrisAI:
 
             piece_rot = self._clone_tetromino(piece)
             piece_rot.rotate()
-            rot_next = (rot + 1) % 4
+            rot_next = (rot + 1) % max_rotations
             key = self._blocks_state(piece_rot)
             if key not in visited and self._valid_piece(piece_rot, base_board):
                 visited.add(key)
@@ -363,10 +394,10 @@ class TetrisAI:
         clear_bonus += 4 * difficult_lines_cleared  # Tune as needed
 
         cost = (
-            0.9 * agg_height +
+            1.2 * agg_height +
             4.0 * holes +
             1.2 * self._blockades(board) +
-            0.5 * bumpiness -
+            0.8 * bumpiness -
             clear_bonus
         )
         return cost
