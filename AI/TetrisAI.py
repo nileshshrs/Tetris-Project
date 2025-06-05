@@ -1,5 +1,6 @@
 import pygame
 from settings import ROWS, COLUMNS
+from collections import deque
 
 class TetrisAI:
     def __init__(self, game):
@@ -23,6 +24,7 @@ class TetrisAI:
         ]
         original = self.game.tetromino
 
+        # --- DFS search (brute-force) ---
         best_score = float("-inf")
         best_rotation = 0
         best_dx = 0
@@ -42,13 +44,12 @@ class TetrisAI:
                 for b in candidate.blocks:
                     b.pos.x += dx
 
-                # --- Drop the candidate all the way down (even from negative y) ---
+                # Drop the candidate all the way down (even from negative y)
                 while True:
                     collision = False
                     for b in candidate.blocks:
                         x = int(b.pos.x)
                         y = int(b.pos.y)
-                        # Only check for collision with ground/board if the block is visible or would be visible next step
                         if y + 1 >= self.rows or (y + 1 >= 0 and base_board[y + 1][x]):
                             collision = True
                             break
@@ -58,11 +59,7 @@ class TetrisAI:
                     else:
                         break
 
-                # Print block positions for O piece
-                if original.shape == 'O':
-                    print(f"O candidate at dx={dx}: {[ (int(b.pos.x), int(b.pos.y)) for b in candidate.blocks ]}")
-
-                # Now check if ALL blocks are fully inside the field
+                # Check if ALL blocks are fully inside the field
                 valid = all(
                     0 <= int(b.pos.x) < self.cols and 0 <= int(b.pos.y) < self.rows
                     for b in candidate.blocks
@@ -75,9 +72,6 @@ class TetrisAI:
                         if base_board[y][x]:
                             valid = False
                             break
-
-                if original.shape == 'O' and not valid:
-                    print(f"Invalid O at dx={dx}: {[ (int(b.pos.x), int(b.pos.y)) for b in candidate.blocks ]}")
 
                 if not valid:
                     continue
@@ -93,6 +87,16 @@ class TetrisAI:
                     best_score = score
                     best_rotation = rotation_count
                     best_dx = dx
+
+        # --- BFS search (systematic state-space) ---
+        bfs_result = self._bfs_search(original, base_board)
+        if bfs_result is not None:
+            bfs_score, bfs_rotation, bfs_dx = bfs_result
+            # Choose best between DFS and BFS
+            if bfs_score > best_score:
+                best_score = bfs_score
+                best_rotation = bfs_rotation
+                best_dx = bfs_dx
 
         # EXECUTE the chosen move
         tetromino = self.game.tetromino
@@ -120,6 +124,111 @@ class TetrisAI:
                 while dropped:
                     dropped = tetromino.move_down()
         self.last_action_time = now
+
+    def _bfs_search(self, original, base_board):
+        # BFS node: (piece, rotation_count, dx_from_spawn)
+        Node = lambda piece, rot, dx: (piece, rot, dx)
+        visited = set()
+        queue = deque()
+        best_score = float("-inf")
+        best_rotation = 0
+        best_dx = 0
+
+        # Start with all 4 rotations at spawn pos
+        for rot in range(4):
+            piece = self._clone_tetromino(original)
+            for _ in range(rot):
+                piece.rotate()
+            state = (self._blocks_state(piece), rot, 0)
+            queue.append((piece, rot, 0))
+            visited.add(self._blocks_state(piece))
+
+        while queue:
+            piece, rot, dx = queue.popleft()
+            # Try moving down until collision (simulate gravity)
+            candidate = self._clone_tetromino(piece)
+            while True:
+                collision = False
+                for b in candidate.blocks:
+                    x = int(b.pos.x)
+                    y = int(b.pos.y)
+                    if y + 1 >= self.rows or (y + 1 >= 0 and base_board[y + 1][x]):
+                        collision = True
+                        break
+                if not collision:
+                    for b in candidate.blocks:
+                        b.pos.y += 1
+                else:
+                    break
+
+            # Validate candidate
+            valid = all(
+                0 <= int(b.pos.x) < self.cols and 0 <= int(b.pos.y) < self.rows
+                for b in candidate.blocks
+            )
+            if valid:
+                for b in candidate.blocks:
+                    x = int(b.pos.x)
+                    y = int(b.pos.y)
+                    if base_board[y][x]:
+                        valid = False
+                        break
+            if valid:
+                sim_board = [row[:] for row in base_board]
+                for b in candidate.blocks:
+                    sim_board[int(b.pos.y)][int(b.pos.x)] = 1
+                score = -self._cost_function(sim_board)
+                if score > best_score:
+                    best_score = score
+                    best_rotation = rot
+                    best_dx = dx
+
+            # Enqueue all possible moves: left, right, rotate
+            # Move left
+            piece_left = self._clone_tetromino(piece)
+            for b in piece_left.blocks:
+                b.pos.x -= 1
+            key = self._blocks_state(piece_left)
+            if key not in visited and self._valid_piece(piece_left, base_board):
+                visited.add(key)
+                queue.append((piece_left, rot, dx - 1))
+
+            # Move right
+            piece_right = self._clone_tetromino(piece)
+            for b in piece_right.blocks:
+                b.pos.x += 1
+            key = self._blocks_state(piece_right)
+            if key not in visited and self._valid_piece(piece_right, base_board):
+                visited.add(key)
+                queue.append((piece_right, rot, dx + 1))
+
+            # Rotate
+            piece_rot = self._clone_tetromino(piece)
+            piece_rot.rotate()
+            rot_next = (rot + 1) % 4
+            key = self._blocks_state(piece_rot)
+            if key not in visited and self._valid_piece(piece_rot, base_board):
+                visited.add(key)
+                queue.append((piece_rot, rot_next, dx))
+
+        if best_score > float("-inf"):
+            return (best_score, best_rotation, best_dx)
+        else:
+            return None
+
+    def _blocks_state(self, piece):
+        # Tuple of rounded (x, y) positions, sorted, uniquely identify a tetromino's arrangement
+        return tuple(sorted((round(b.pos.x), round(b.pos.y)) for b in piece.blocks))
+
+    def _valid_piece(self, piece, board):
+        for b in piece.blocks:
+            x = int(b.pos.x)
+            y = int(b.pos.y)
+            if not (0 <= x < self.cols and -4 < y < self.rows):  # Allow negative y at spawn
+                return False
+            if 0 <= y < self.rows and board[y][x]:
+                return False
+        return True
 
     def _clone_tetromino(self, original):
         dummy_group = pygame.sprite.Group()
@@ -200,10 +309,10 @@ class TetrisAI:
             clear_bonus = 0
 
         cost = (
-            0.8 * agg_height +
-            5.0 * holes +
+            1.2 * agg_height +
+            4.0 * holes +
             1.2 * self._blockades(board) +
-            0.5 * bumpiness -
+            0.8 * bumpiness -
             clear_bonus
         )
         return cost
