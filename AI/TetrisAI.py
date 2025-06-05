@@ -2,6 +2,28 @@ import pygame
 from settings import ROWS, COLUMNS
 from collections import deque
 
+def count_almost_full_lines(board, allowed_gaps=2):
+    count = 0
+    for row in board:
+        empty = sum(1 for cell in row if cell == 0)
+        if 1 <= empty <= allowed_gaps:
+            count += 1
+    return count
+
+def find_deepest_well(board):
+    rows, cols = len(board), len(board[0])
+    col_heights = [rows - next((r for r in range(rows) if board[r][c]), rows) for c in range(cols)]
+    max_well_depth = 0
+    well_col = -1
+    for c in range(cols):
+        left = col_heights[c-1] if c > 0 else rows
+        right = col_heights[c+1] if c < cols-1 else rows
+        well_depth = min(left, right) - col_heights[c]
+        if well_depth > max_well_depth:
+            max_well_depth = well_depth
+            well_col = c
+    return well_col, max_well_depth
+
 class TetrisAI:
     def __init__(self, game):
         self.game = game
@@ -76,12 +98,35 @@ class TetrisAI:
                 if not valid:
                     continue
 
+                # Before placement: count almost full lines
+                almost_full_before = count_almost_full_lines(base_board, allowed_gaps=2)
+
                 # Lock the piece into the board
                 sim_board = [row[:] for row in base_board]
                 for b in candidate.blocks:
                     sim_board[int(b.pos.y)][int(b.pos.x)] = 1
 
-                score = -self._cost_function(sim_board)  # Lower cost is better
+                # After placement
+                lines_cleared = sum(1 for row in sim_board if all(cell != 0 for cell in row))
+                almost_full_after = count_almost_full_lines(sim_board, allowed_gaps=2)
+                difficult_lines_cleared = max(0, almost_full_before - almost_full_after)
+
+                # --- WELL MAINTENANCE RULE ---
+                well_col, well_depth = find_deepest_well(sim_board)
+                fills_well = False
+                for b in candidate.blocks:
+                    x = int(b.pos.x)
+                    y = int(b.pos.y)
+                    if x == well_col and (y == self.rows - 1 or sim_board[y + 1][x]):
+                        fills_well = True
+                        break
+                if fills_well and well_depth >= 2 and lines_cleared == 0:
+                    continue  # Don't fill a deep well unless you clear a line
+
+                # Score as usual
+                score = -self._cost_function(
+                    sim_board, lines_cleared, difficult_lines_cleared
+                )
 
                 if score > best_score:
                     best_score = score
@@ -92,7 +137,6 @@ class TetrisAI:
         bfs_result = self._bfs_search(original, base_board)
         if bfs_result is not None:
             bfs_score, bfs_rotation, bfs_dx = bfs_result
-            # Choose best between DFS and BFS
             if bfs_score > best_score:
                 best_score = bfs_score
                 best_rotation = bfs_rotation
@@ -126,7 +170,6 @@ class TetrisAI:
         self.last_action_time = now
 
     def _bfs_search(self, original, base_board):
-        # BFS node: (piece, rotation_count, dx_from_spawn)
         Node = lambda piece, rot, dx: (piece, rot, dx)
         visited = set()
         queue = deque()
@@ -134,7 +177,6 @@ class TetrisAI:
         best_rotation = 0
         best_dx = 0
 
-        # Start with all 4 rotations at spawn pos
         for rot in range(4):
             piece = self._clone_tetromino(original)
             for _ in range(rot):
@@ -145,7 +187,6 @@ class TetrisAI:
 
         while queue:
             piece, rot, dx = queue.popleft()
-            # Try moving down until collision (simulate gravity)
             candidate = self._clone_tetromino(piece)
             while True:
                 collision = False
@@ -174,17 +215,36 @@ class TetrisAI:
                         valid = False
                         break
             if valid:
+                almost_full_before = count_almost_full_lines(base_board, allowed_gaps=2)
                 sim_board = [row[:] for row in base_board]
                 for b in candidate.blocks:
                     sim_board[int(b.pos.y)][int(b.pos.x)] = 1
-                score = -self._cost_function(sim_board)
+                lines_cleared = sum(1 for row in sim_board if all(cell != 0 for cell in row))
+                almost_full_after = count_almost_full_lines(sim_board, allowed_gaps=2)
+                difficult_lines_cleared = max(0, almost_full_before - almost_full_after)
+
+                # --- WELL MAINTENANCE RULE ---
+                well_col, well_depth = find_deepest_well(sim_board)
+                fills_well = False
+                for b in candidate.blocks:
+                    x = int(b.pos.x)
+                    y = int(b.pos.y)
+                    if x == well_col and (y == self.rows - 1 or sim_board[y + 1][x]):
+                        fills_well = True
+                        break
+                if fills_well and well_depth >= 2 and lines_cleared == 0:
+                    continue  # Don't fill a deep well unless you clear a line
+
+                score = -self._cost_function(
+                    sim_board, lines_cleared, difficult_lines_cleared
+                )
+
                 if score > best_score:
                     best_score = score
                     best_rotation = rot
                     best_dx = dx
 
             # Enqueue all possible moves: left, right, rotate
-            # Move left
             piece_left = self._clone_tetromino(piece)
             for b in piece_left.blocks:
                 b.pos.x -= 1
@@ -193,7 +253,6 @@ class TetrisAI:
                 visited.add(key)
                 queue.append((piece_left, rot, dx - 1))
 
-            # Move right
             piece_right = self._clone_tetromino(piece)
             for b in piece_right.blocks:
                 b.pos.x += 1
@@ -202,7 +261,6 @@ class TetrisAI:
                 visited.add(key)
                 queue.append((piece_right, rot, dx + 1))
 
-            # Rotate
             piece_rot = self._clone_tetromino(piece)
             piece_rot.rotate()
             rot_next = (rot + 1) % 4
@@ -217,7 +275,6 @@ class TetrisAI:
             return None
 
     def _blocks_state(self, piece):
-        # Tuple of rounded (x, y) positions, sorted, uniquely identify a tetromino's arrangement
         return tuple(sorted((round(b.pos.x), round(b.pos.y)) for b in piece.blocks))
 
     def _valid_piece(self, piece, board):
@@ -255,12 +312,11 @@ class TetrisAI:
                     blockades += 1
         return blockades
 
-    def _cost_function(self, board):
+    def _cost_function(self, board, lines_cleared=0, difficult_lines_cleared=0):
         holes = 0
         blockades = 0
         agg_height = 0
         bumpiness = 0
-        lines_cleared = 0
         rows = len(board)
         cols = len(board[0])
         heights = [0 for _ in range(cols)]
@@ -293,10 +349,6 @@ class TetrisAI:
         for i in range(cols - 1):
             bumpiness += abs(heights[i] - heights[i + 1])
 
-        for row in board:
-            if all(cell != 0 for cell in row):
-                lines_cleared += 1
-
         if lines_cleared == 4:
             clear_bonus = 20
         elif lines_cleared == 3:
@@ -308,11 +360,13 @@ class TetrisAI:
         else:
             clear_bonus = 0
 
+        clear_bonus += 4 * difficult_lines_cleared  # Tune as needed
+
         cost = (
-            1.2 * agg_height +
+            0.9 * agg_height +
             4.0 * holes +
             1.2 * self._blockades(board) +
-            0.8 * bumpiness -
+            0.5 * bumpiness -
             clear_bonus
         )
         return cost
