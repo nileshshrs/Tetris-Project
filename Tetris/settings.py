@@ -49,7 +49,7 @@ TETROMINOS = {
     'Z': {'shape': [(0,0), (1,0), (0,-1), (-1,-1)], 'color': RED}
 }
 
-SCORE_DATA = {1: 100, 2: 300, 3: 500, 4: 1200}
+SCORE_DATA = {1: 40, 2: 100, 3: 300, 4: 1200}
 
 TETROMINOS_WEIGHTS = {
     'T': 14.6,
@@ -63,6 +63,15 @@ TETROMINOS_WEIGHTS = {
 
 
 #pseudo random weighted bags
+# def create_weighted_bag():
+#     """Creates a weighted bag for Tetrominoes based on their weights, ensuring random distribution."""
+#     bag = random.choices(
+#         population=list(TETROMINOS_WEIGHTS.keys()),  # Tetromino names
+#         weights=list(TETROMINOS_WEIGHTS.values()),  # Corresponding weights
+#         k=14  # Choose a moderate number for the bag size (you can adjust this)
+#     )
+#     random.shuffle(bag)  # Shuffle to randomize the order
+#     return bag
 
 # def get_next_tetromino(bag, recent_shapes=[], max_streak=2):
 #     """Fetches the next Tetromino and prevents more than `max_streak` consecutive repeats."""

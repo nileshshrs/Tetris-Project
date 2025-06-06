@@ -1,8 +1,6 @@
 import pygame
 from settings import ROWS, COLUMNS
 
-# --- Utility Functions --- #
-
 def count_almost_full_lines(board, allowed_gaps=2):
     count = 0
     for row in board:
@@ -24,8 +22,6 @@ def find_deepest_well(board):
             max_well_depth = well_depth
             well_col = c
     return well_col, max_well_depth
-
-# --- AI Class --- #
 
 class TetrisAI:
     def __init__(self, game, tetromino_class):
@@ -119,15 +115,21 @@ class TetrisAI:
                     sim_board[int(b.pos.y)][int(b.pos.x)] = 1
 
                 lines_cleared = sum(1 for row in sim_board if all(cell != 0 for cell in row))
-                next_score = self._evaluate_next_piece(sim_board, next_shape, candidate)
+                cost_now = self._cost_function(sim_board, lines_cleared, candidate)
 
-                if next_score > best_score:
-                    best_score = next_score
+                # Lookahead (optional, tunable weight)
+                if next_shape:
+                    next_score = self._evaluate_next_piece(sim_board, next_shape, candidate)
+                    total_score = -cost_now +  next_score
+                else:
+                    total_score = -cost_now
+
+                if total_score > best_score:
+                    best_score = total_score
                     best_rotation = rotation_count
                     best_dx = dx
 
         if best_score == float("-inf"):
-            # fallback (rare): try BFS with current piece only
             return
 
         tetromino = self.game.tetromino
@@ -281,7 +283,6 @@ class TetrisAI:
         almost_full = count_almost_full_lines(board, allowed_gaps=2)
         well_col, well_depth = find_deepest_well(board)
 
-        # --- Well fill penalty: discourage filling deepest well unless using I piece
         fills_well = False
         if candidate and well_col != -1:
             for b in candidate.blocks:
@@ -291,7 +292,6 @@ class TetrisAI:
                     fills_well = True
                     break
 
-        # You can tune these weights!
         if lines_cleared == 4:
             clear_bonus = 20
         elif lines_cleared == 3:
@@ -309,9 +309,7 @@ class TetrisAI:
             1.2 * blockades +
             0.8 * bumpiness -
             0.5 * almost_full +
-            (3.0 * fills_well if fills_well else 0) -  # Penalize filling the well (unless you want I-piece specific logic)
+            (3.0 * fills_well if fills_well else 0) -
             clear_bonus
         )
         return cost
-
-#

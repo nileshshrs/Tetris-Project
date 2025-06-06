@@ -19,7 +19,7 @@ class Main:
         pygame.display.set_caption("TETRIS")
 
         # Piece bag and preview queue
-        self.bag = create_weighted_bag()
+        self.bag = create_7bag()
         self.next_shapes = [get_next_tetromino(self.bag) for _ in range(3)]
 
         # Game and UI components

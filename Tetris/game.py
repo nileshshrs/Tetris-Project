@@ -23,7 +23,7 @@ class Game:
         self.fast_drop_speed = UPDATE_START_SPEED * 0.1
         self.is_fast_drop = False
         self.hard_drop_in_progress = False
-        self.current_bag = create_weighted_bag()
+        self.current_bag = create_7bag()
         self.get_next_shape = get_next_shape
         self.get_held_shape = get_held_shape
         self.update_score = update_score
