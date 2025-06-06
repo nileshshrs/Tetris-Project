@@ -149,14 +149,11 @@ class TetrisAI:
                     best_rotation = rotation_count
                     best_dx = dx
 
-        # --- BFS search (systematic state-space) ---
-        bfs_result = self._bfs_search(original, base_board)
-        if bfs_result is not None:
-            bfs_score, bfs_rotation, bfs_dx = bfs_result
-            if bfs_score > best_score:
-                best_score = bfs_score
-                best_rotation = bfs_rotation
-                best_dx = bfs_dx
+        # --- BFS fallback: Only if DFS failed ---
+        if best_score == float("-inf"):
+            bfs_result = self._bfs_search(original, base_board)
+            if bfs_result is not None:
+                best_score, best_rotation, best_dx = bfs_result
 
         # EXECUTE the chosen move
         tetromino = self.game.tetromino
