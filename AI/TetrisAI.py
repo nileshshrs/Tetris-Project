@@ -1,6 +1,7 @@
 import pygame
 from settings import ROWS, COLUMNS
-from collections import deque
+
+# --- Utility Functions --- #
 
 def count_almost_full_lines(board, allowed_gaps=2):
     count = 0
@@ -24,16 +25,25 @@ def find_deepest_well(board):
             well_col = c
     return well_col, max_well_depth
 
+# --- AI Class --- #
+
 class TetrisAI:
-    def __init__(self, game):
+    def __init__(self, game, tetromino_class):
         self.game = game
+        self.Tetrominos = tetromino_class
         self.last_action_time = 0
-        self.delay = 200  # ms between AI moves
+        self.delay = 200
         self.rows = ROWS
         self.cols = COLUMNS
 
-    def update(self):
-        if self.game.is_game_over or not self.game.tetromino:
+    def _is_unplayable(self, candidate):
+        for b in candidate.blocks:
+            if int(b.pos.y) < 0:
+                return True
+        return False
+
+    def update(self, next_shape):
+        if self.game.is_game_over or not self.game.tetromino or not next_shape:
             return
 
         now = pygame.time.get_ticks()
@@ -46,12 +56,10 @@ class TetrisAI:
         ]
         original = self.game.tetromino
 
-        # --- DFS search (brute-force) ---
         best_score = float("-inf")
         best_rotation = 0
         best_dx = 0
 
-        # Determine unique rotations for the piece
         shape = getattr(original, "shape", None)
         if shape == "O":
             max_rotations = 1
@@ -75,7 +83,6 @@ class TetrisAI:
                 for b in candidate.blocks:
                     b.pos.x += dx
 
-                # Drop the candidate all the way down (even from negative y)
                 while True:
                     collision = False
                     for b in candidate.blocks:
@@ -90,12 +97,13 @@ class TetrisAI:
                     else:
                         break
 
-                # Check if ALL blocks are fully inside the field
+                if self._is_unplayable(candidate):
+                    continue
+
                 valid = all(
                     0 <= int(b.pos.x) < self.cols and 0 <= int(b.pos.y) < self.rows
                     for b in candidate.blocks
                 )
-                # Also check for collision in the final position
                 if valid:
                     for b in candidate.blocks:
                         x = int(b.pos.x)
@@ -103,61 +111,26 @@ class TetrisAI:
                         if base_board[y][x]:
                             valid = False
                             break
-
                 if not valid:
                     continue
 
-                # Before placement: count almost full lines
-                almost_full_before = count_almost_full_lines(base_board, allowed_gaps=2)
-
-                # Lock the piece into the board
                 sim_board = [row[:] for row in base_board]
                 for b in candidate.blocks:
                     sim_board[int(b.pos.y)][int(b.pos.x)] = 1
 
-                # After placement
                 lines_cleared = sum(1 for row in sim_board if all(cell != 0 for cell in row))
-                almost_full_after = count_almost_full_lines(sim_board, allowed_gaps=2)
-                difficult_lines_cleared = max(0, almost_full_before - almost_full_after)
+                next_score = self._evaluate_next_piece(sim_board, next_shape, candidate)
 
-                # --- WELL MAINTENANCE RULE ---
-                well_col, well_depth = find_deepest_well(sim_board)
-                fills_well = False
-                for b in candidate.blocks:
-                    x = int(b.pos.x)
-                    y = int(b.pos.y)
-                    if x == well_col and (y == self.rows - 1 or sim_board[y + 1][x]):
-                        fills_well = True
-                        break
-
-                # Emergency override: allow filling well if stack is high
-                stack_too_high = any(
-                    any(cell for cell in sim_board[row])
-                    for row in range(12)
-                )
-
-                if fills_well and well_depth >= 2 and lines_cleared == 0 and not stack_too_high:
-                    continue  # Only avoid filling well if stack is safe
-
-                # Score as usual
-                score = -self._cost_function(
-                    sim_board, lines_cleared, difficult_lines_cleared
-                )
-
-                if score > best_score:
-                    best_score = score
+                if next_score > best_score:
+                    best_score = next_score
                     best_rotation = rotation_count
                     best_dx = dx
 
-        # --- BFS fallback: Only if DFS failed ---
         if best_score == float("-inf"):
-            bfs_result = self._bfs_search(original, base_board)
-            if bfs_result is not None:
-                best_score, best_rotation, best_dx = bfs_result
+            # fallback (rare): try BFS with current piece only
+            return
 
-        # EXECUTE the chosen move
         tetromino = self.game.tetromino
-
         rotations_needed = best_rotation
         dx_needed = best_dx
 
@@ -170,7 +143,6 @@ class TetrisAI:
             for _ in range(-dx_needed):
                 tetromino.move_horizontal(-1)
 
-        # Hard drop if at target
         if rotations_needed == 0 and dx_needed == 0:
             if hasattr(self.game, 'perform_hard_drop'):
                 self.game.perform_hard_drop()
@@ -182,16 +154,14 @@ class TetrisAI:
                     dropped = tetromino.move_down()
         self.last_action_time = now
 
-    def _bfs_search(self, original, base_board):
-        Node = lambda piece, rot, dx: (piece, rot, dx)
-        visited = set()
-        queue = deque()
-        best_score = float("-inf")
-        best_rotation = 0
-        best_dx = 0
-
-        # Determine unique rotations for the piece
-        shape = getattr(original, "shape", None)
+    def _evaluate_next_piece(self, board, next_shape, prev_candidate=None):
+        next_piece = self.Tetrominos(
+            next_shape,
+            pygame.sprite.Group(),
+            self.game.create_new_tetromino,
+            [row[:] for row in board]
+        )
+        shape = getattr(next_piece, "shape", None)
         if shape == "O":
             max_rotations = 1
         elif shape in ("I", "S", "Z"):
@@ -199,129 +169,70 @@ class TetrisAI:
         else:
             max_rotations = 4
 
-        for rot in range(max_rotations):
-            piece = self._clone_tetromino(original)
-            for _ in range(rot):
-                piece.rotate()
-            state = (self._blocks_state(piece), rot, 0)
-            queue.append((piece, rot, 0))
-            visited.add(self._blocks_state(piece))
+        best_score = float("-inf")
+        for rotation_count in range(max_rotations):
+            test_piece = self._clone_tetromino(next_piece)
+            for _ in range(rotation_count):
+                test_piece.rotate()
 
-        while queue:
-            piece, rot, dx = queue.popleft()
-            candidate = self._clone_tetromino(piece)
-            while True:
-                collision = False
+            leftmost = min(int(b.pos.x) for b in test_piece.blocks)
+            rightmost = max(int(b.pos.x) for b in test_piece.blocks)
+            dx_min = -leftmost
+            dx_max = (self.cols - 1) - rightmost
+
+            for dx in range(dx_min, dx_max + 1):
+                candidate = self._clone_tetromino(test_piece)
                 for b in candidate.blocks:
-                    x = int(b.pos.x)
-                    y = int(b.pos.y)
-                    if y + 1 >= self.rows or (y + 1 >= 0 and base_board[y + 1][x]):
-                        collision = True
-                        break
-                if not collision:
+                    b.pos.x += dx
+
+                while True:
+                    collision = False
                     for b in candidate.blocks:
-                        b.pos.y += 1
-                else:
-                    break
-
-            # Validate candidate
-            valid = all(
-                0 <= int(b.pos.x) < self.cols and 0 <= int(b.pos.y) < self.rows
-                for b in candidate.blocks
-            )
-            if valid:
-                for b in candidate.blocks:
-                    x = int(b.pos.x)
-                    y = int(b.pos.y)
-                    if base_board[y][x]:
-                        valid = False
+                        x = int(b.pos.x)
+                        y = int(b.pos.y)
+                        if y + 1 >= self.rows or (y + 1 >= 0 and board[y + 1][x]):
+                            collision = True
+                            break
+                    if not collision:
+                        for b in candidate.blocks:
+                            b.pos.y += 1
+                    else:
                         break
-            if valid:
-                almost_full_before = count_almost_full_lines(base_board, allowed_gaps=2)
-                sim_board = [row[:] for row in base_board]
+
+                if self._is_unplayable(candidate):
+                    continue
+
+                valid = all(
+                    0 <= int(b.pos.x) < self.cols and 0 <= int(b.pos.y) < self.rows
+                    for b in candidate.blocks
+                )
+                if valid:
+                    for b in candidate.blocks:
+                        x = int(b.pos.x)
+                        y = int(b.pos.y)
+                        if board[y][x]:
+                            valid = False
+                            break
+                if not valid:
+                    continue
+
+                sim_board = [row[:] for row in board]
                 for b in candidate.blocks:
                     sim_board[int(b.pos.y)][int(b.pos.x)] = 1
+
                 lines_cleared = sum(1 for row in sim_board if all(cell != 0 for cell in row))
-                almost_full_after = count_almost_full_lines(sim_board, allowed_gaps=2)
-                difficult_lines_cleared = max(0, almost_full_before - almost_full_after)
-
-                # --- WELL MAINTENANCE RULE ---
-                well_col, well_depth = find_deepest_well(sim_board)
-                fills_well = False
-                for b in candidate.blocks:
-                    x = int(b.pos.x)
-                    y = int(b.pos.y)
-                    if x == well_col and (y == self.rows - 1 or sim_board[y + 1][x]):
-                        fills_well = True
-                        break
-
-                stack_too_high = any(
-                    any(cell for cell in sim_board[row])
-                    for row in range(12)
-                )
-
-                if fills_well and well_depth >= 2 and lines_cleared == 0 and not stack_too_high:
-                    continue  # Only avoid filling well if stack is safe
-
-                score = -self._cost_function(
-                    sim_board, lines_cleared, difficult_lines_cleared
-                )
-
+                score = -self._cost_function(sim_board, lines_cleared, candidate)
                 if score > best_score:
                     best_score = score
-                    best_rotation = rot
-                    best_dx = dx
-
-            # Enqueue all possible moves: left, right, rotate
-            piece_left = self._clone_tetromino(piece)
-            for b in piece_left.blocks:
-                b.pos.x -= 1
-            key = self._blocks_state(piece_left)
-            if key not in visited and self._valid_piece(piece_left, base_board):
-                visited.add(key)
-                queue.append((piece_left, rot, dx - 1))
-
-            piece_right = self._clone_tetromino(piece)
-            for b in piece_right.blocks:
-                b.pos.x += 1
-            key = self._blocks_state(piece_right)
-            if key not in visited and self._valid_piece(piece_right, base_board):
-                visited.add(key)
-                queue.append((piece_right, rot, dx + 1))
-
-            piece_rot = self._clone_tetromino(piece)
-            piece_rot.rotate()
-            rot_next = (rot + 1) % max_rotations
-            key = self._blocks_state(piece_rot)
-            if key not in visited and self._valid_piece(piece_rot, base_board):
-                visited.add(key)
-                queue.append((piece_rot, rot_next, dx))
-
-        if best_score > float("-inf"):
-            return (best_score, best_rotation, best_dx)
-        else:
-            return None
-
-    def _blocks_state(self, piece):
-        return tuple(sorted((round(b.pos.x), round(b.pos.y)) for b in piece.blocks))
-
-    def _valid_piece(self, piece, board):
-        for b in piece.blocks:
-            x = int(b.pos.x)
-            y = int(b.pos.y)
-            if not (0 <= x < self.cols and -4 < y < self.rows):  # Allow negative y at spawn
-                return False
-            if 0 <= y < self.rows and board[y][x]:
-                return False
-        return True
+        return best_score
 
     def _clone_tetromino(self, original):
         dummy_group = pygame.sprite.Group()
         clone = type(original)(
-            shape=original.shape,
-            group=dummy_group,
-            create_new_tetromino=original.create_new_tetromino,
-            game_data=original.game_data
+            original.shape,
+            dummy_group,
+            original.create_new_tetromino,
+            [row[:] for row in original.game_data]
         )
         for i, b in enumerate(original.blocks):
             clone.blocks[i].pos = b.pos.copy()
@@ -340,9 +251,8 @@ class TetrisAI:
                     blockades += 1
         return blockades
 
-    def _cost_function(self, board, lines_cleared=0, difficult_lines_cleared=0):
+    def _cost_function(self, board, lines_cleared=0, candidate=None):
         holes = 0
-        blockades = 0
         agg_height = 0
         bumpiness = 0
         rows = len(board)
@@ -352,13 +262,11 @@ class TetrisAI:
         for col in range(cols):
             col_height = 0
             block_found = False
-            first_block_row = None
             for row in range(rows):
                 if board[row][col]:
                     if not block_found:
                         col_height = rows - row
                         block_found = True
-                        first_block_row = row
                     for k in range(row + 1, rows):
                         if not board[k][col]:
                             holes += 1
@@ -366,17 +274,24 @@ class TetrisAI:
             heights[col] = col_height
             agg_height += col_height
 
-            if first_block_row is not None:
-                for k in range(first_block_row, rows):
-                    if not board[k][col]:
-                        for m in range(first_block_row, k):
-                            if board[m][col]:
-                                blockades += 1
-                        break
-
         for i in range(cols - 1):
             bumpiness += abs(heights[i] - heights[i + 1])
 
+        blockades = self._blockades(board)
+        almost_full = count_almost_full_lines(board, allowed_gaps=2)
+        well_col, well_depth = find_deepest_well(board)
+
+        # --- Well fill penalty: discourage filling deepest well unless using I piece
+        fills_well = False
+        if candidate and well_col != -1:
+            for b in candidate.blocks:
+                x = int(b.pos.x)
+                y = int(b.pos.y)
+                if x == well_col and (y == self.rows - 1 or board[y + 1][x]):
+                    fills_well = True
+                    break
+
+        # You can tune these weights!
         if lines_cleared == 4:
             clear_bonus = 20
         elif lines_cleared == 3:
@@ -388,13 +303,13 @@ class TetrisAI:
         else:
             clear_bonus = 0
 
-        clear_bonus += 4 * difficult_lines_cleared  # Tune as needed
-
         cost = (
             1.2 * agg_height +
             4.0 * holes +
-            1.2 * self._blockades(board) +
+            1.2 * blockades +
             0.8 * bumpiness -
+            0.5 * almost_full +
+            (3.0 * fills_well if fills_well else 0) -  # Penalize filling the well (unless you want I-piece specific logic)
             clear_bonus
         )
         return cost
