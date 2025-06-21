@@ -304,7 +304,7 @@ class TetrisAI:
             clear_bonus = 0
 
         cost = (
-            1.2 * agg_height +
+            1.275 * agg_height +
             4.0 * holes +
             1.2 * blockades +
             0.8 * bumpiness -

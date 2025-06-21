@@ -8,6 +8,10 @@ sys.path.append(os.path.abspath('.'))
 from AI.TetrisAI import TetrisAI 
 #ai part
 
+#GA part
+
+#GA part
+
 class Game: 
     def __init__(self, get_next_shape, update_score, get_held_shape):
         self.surface = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
