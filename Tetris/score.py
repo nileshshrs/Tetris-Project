@@ -20,6 +20,12 @@ class Score:
 
         # Data
         self.score = 0
+        # The next two lines are for standalone only, comment or remove in tray mode:
+
+        self.levels = 1        # <---------------- ADD THIS LINE
+
+        # The next two lines are for standalone only, comment or remove in tray mode:
+
         self.start_time = time.time()
         self.frozen_time = None  # Stores time at game over
 

@@ -1,5 +1,4 @@
 from settings import *
-from sys import exit
 import time
 import pygame
 
@@ -12,11 +11,12 @@ from held import Held
 
 class Main:
     def __init__(self):
-        # General setup
-        pygame.init()
-        self.display_surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-        self.clock = pygame.time.Clock()
-        pygame.display.set_caption("TETRIS")
+        # ==== UNCOMMENT FOR NORMAL/STANDALONE MODE ====
+        # pygame.init()
+        # self.display_surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        # self.clock = pygame.time.Clock()
+        # pygame.display.set_caption("TETRIS")
+        # ==============================================
 
         # Piece bag and preview queue
         self.bag = create_7bag()
@@ -28,8 +28,6 @@ class Main:
         self.lines = Lines()
         self.held = Held()
         self.preview = Preview()
-
-        # --- AI lookahead support: always up-to-date next shape ---
         self.game.current_next_shape = self.next_shapes[0]
 
     def update_score(self, lines, score, levels):
@@ -39,7 +37,6 @@ class Main:
         self.lines.levels = levels
 
     def get_next_shape(self):
-        # --- Always update next_shapes and current_next_shape ---
         next_piece = self.next_shapes.pop(0)
         self.next_shapes.append(get_next_tetromino(self.bag))
         self.game.is_held = False
@@ -50,42 +47,55 @@ class Main:
         self.held.held_shape = shape
 
     def run(self):
-        while True:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    exit()
+        # ==== UNCOMMENT FOR NORMAL/STANDALONE MODE ====
+        # while True:
+        #     for event in pygame.event.get():
+        #         if event.type == pygame.QUIT:
+        #             pygame.quit()
+        #             exit()
+        #
+        #     self.display_surface.fill(GRAY)
+        #
+        #     if self.game.is_game_over:
+        #         if self.score.frozen_time is None:
+        #             self.score.frozen_time = int(time.time() - self.score.start_time)
+        #         self.score.run()
+        #         self.lines.run()
+        #         self.preview.run(self.next_shapes)
+        #         self.held.run()
+        #
+        #         # Optional: Show "Game Over"
+        #         font = pygame.font.SysFont("arial", 48, bold=True)
+        #         text = font.render("GAME OVER", True, (255, 0, 0))
+        #         text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+        #         self.display_surface.blit(text, text_rect)
+        #
+        #         pygame.display.update()
+        #         self.clock.tick(60)
+        #         continue
+        #
+        #     # --- Normal game loop ---
+        #     self.game.run()
+        #     self.score.run()
+        #     self.lines.run()
+        #     self.preview.run(self.next_shapes)
+        #     self.held.run()
+        #
+        #     pygame.display.update()
+        #     self.clock.tick(60)
+        # ==============================================
 
-            self.display_surface.fill(GRAY)
-
-            if self.game.is_game_over:
-                if self.score.frozen_time is None:
-                    self.score.frozen_time = int(time.time() - self.score.start_time)
-                self.score.run()
-                self.lines.run()
-                self.preview.run(self.next_shapes)
-                self.held.run()
-
-                # Optional: Show "Game Over"
-                font = pygame.font.SysFont("arial", 48, bold=True)
-                text = font.render("GAME OVER", True, (255, 0, 0))
-                text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
-                self.display_surface.blit(text, text_rect)
-
-                pygame.display.update()
-                self.clock.tick(60)
-                continue
-
-            # --- Normal game loop ---
-            self.game.run()
-            self.score.run()
-            self.lines.run()
-            self.preview.run(self.next_shapes)
-            self.held.run()
-
-            pygame.display.update()
-            self.clock.tick(60)
+        # --- Tray mode: just draw a single frame for use in multi-board tray ---
+        self.game.surface.fill(GRAY)
+        self.game.run()
+        self.score.run()
+        self.lines.run()
+        self.preview.run(self.next_shapes)
+        self.held.run()
+        # No pygame.display.update()
 
 if __name__ == "__main__":
     main = Main()
-    main.run()
+    # ==== UNCOMMENT FOR NORMAL/STANDALONE MODE ====
+    # main.run()
+    # ==============================================

@@ -5,18 +5,23 @@ from timers import Timer
 import sys
 import os
 sys.path.append(os.path.abspath('.'))
-from AI.TetrisAI import TetrisAI 
+# from AI.TetrisAI import TetrisAI 
 #ai part
 
 #GA part
-
+from AI.GA.tetris_ai import TetrisAI
 #GA part
 
 class Game: 
     def __init__(self, get_next_shape, update_score, get_held_shape):
         self.surface = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
         self.display_surface = pygame.display.get_surface()
-        self.rect = self.surface.get_rect(topleft = (PADDING+SIDEBAR_WIDTH+PADDING, PADDING))
+        # The next two lines are for standalone only, comment or remove in tray mode:
+
+        # self.rect = self.surface.get_rect(topleft = (PADDING+SIDEBAR_WIDTH+PADDING, PADDING))
+
+        # The next two lines are for standalone only, comment or remove in tray mode:
+
         self.sprites = pygame.sprite.Group()
         self.line_surface = self.surface.copy()
         self.line_surface.fill((0,255,0))
@@ -231,8 +236,12 @@ class Game:
             pygame.draw.rect(self.surface, (200, 200, 200), ghost_rect, 2)
         self.sprites.draw(self.surface)
         self.draw_grid()
-        self.display_surface.blit(self.surface, self.rect.topleft)
-        pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)
+        # The next two lines are for standalone only, comment or remove in tray mode:
+
+        # self.display_surface.blit(self.surface, self.rect.topleft)
+        # pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)
+
+        # The next two lines are for standalone only, comment or remove in tray mode:
 
 
 class Tetrominos:
