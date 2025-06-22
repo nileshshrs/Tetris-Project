@@ -134,7 +134,7 @@ class GA:
             best_fit = np.max(fitnesses)
             best_idx = np.argmax(fitnesses)
             worst_fit = np.min(fitnesses)
-            var_fit = np.var(fitnesses)
+            std_fit = np.std(fitnesses)  # <- standard deviation instead of variance
             best_weights = self.population[best_idx]
 
             history.append({
@@ -142,7 +142,7 @@ class GA:
                 "BestFitness": best_fit,
                 "AvgFitness": avg_fit,
                 "WorstFitness": worst_fit,
-                "FitnessVariance": var_fit,
+                "FitnessStd": std_fit,
                 "BestWeights": best_weights
             })
 
@@ -152,7 +152,7 @@ class GA:
                     f"Avg fitness {avg_fit:.2f}, "
                     f"Best fitness {best_fit:.2f}, "
                     f"Worst fitness {worst_fit:.2f}, "
-                    f"Variance {var_fit:.2f}"
+                    f"Std {std_fit:.2f}"
                 )
 
             self.save_checkpoint(gen, history)
@@ -164,7 +164,7 @@ class GA:
             "BestFitness",
             "AvgFitness",
             "WorstFitness",
-            "FitnessVariance",
+            "FitnessStd",
             "BestWeights"
         ]
         df = pd.DataFrame(history)
