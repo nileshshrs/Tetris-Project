@@ -18,8 +18,8 @@ class GA:
         creep_scale=0.02,
         uniform_chance=0.03,
         creep_chance=0.10,
-        uniform_range=(-1,1),
-        misc_dir="D:\Tetris-Project\miscellaneous",         # Default: up two folders from AI/ga/ to miscellaneous
+        uniform_range=(-5,20),
+        misc_dir="D:\Tetris-Project\miscellaneous",
         log_file="ga_log.csv",
         checkpoint_file="ga_checkpoint.pkl"
     ):
@@ -45,7 +45,8 @@ class GA:
         self.population = None
 
     def _random_weights(self):
-        return np.random.uniform(-1, 1, self.n_weights).tolist()
+        # Use the uniform_range parameter
+        return np.random.uniform(*self.uniform_range, self.n_weights).tolist()
 
     def evaluate_population(self):
         fitnesses = []

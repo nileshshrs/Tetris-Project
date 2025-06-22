@@ -8,6 +8,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../T
 from main import Main
 from genetic_algorithm import GA  # <-- Your GA class file
 
+# Ensure screenshot directory exists
+screenshot_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../AI/assets'))
+os.makedirs(screenshot_dir, exist_ok=True)
+
 # Tray settings
 BOARD_W, BOARD_H = 10, 20
 TRAY_COLS, TRAY_ROWS = 4, 2
@@ -96,6 +100,27 @@ while running and generation < GENERATIONS:
 
     fitness = [None] * POP_SIZE
 
+    # --- Draw tray and take START screenshot ---
+    screen.fill((20, 20, 20))
+    for idx, main in enumerate(games):
+        row = idx // TRAY_COLS
+        col = idx % TRAY_COLS
+        cell_x = ox0 + col * (TRAY_BOARD_W + INFO_PANEL_W + MARGIN)
+        cell_y = oy0 + row * (TRAY_BOARD_H + MARGIN)
+        scaled_surface = pygame.transform.smoothscale(main.game.surface, (TRAY_BOARD_W, TRAY_BOARD_H))
+        screen.blit(scaled_surface, (cell_x, cell_y))
+        pygame.draw.rect(screen, (160, 160, 160), (cell_x, cell_y, TRAY_BOARD_W, TRAY_BOARD_H), 2)
+        info_panel = pygame.Surface((INFO_PANEL_W, TRAY_BOARD_H))
+        draw_info_panel(main, info_panel)
+        screen.blit(info_panel, (cell_x + TRAY_BOARD_W, cell_y))
+    gen_text = info_font.render(f"Generation: {generation+1}/{GENERATIONS}", True, (0,255,0))
+    screen.blit(gen_text, (20, 10))
+    pygame.display.flip()
+    pygame.image.save(
+        screen,
+        os.path.join(screenshot_dir, f"tray_gen_{generation:03d}_start.png")
+    )
+
     # -- 2. Tray loop: run all games until all done
     clock = pygame.time.Clock()
     all_done = False
@@ -145,6 +170,31 @@ while running and generation < GENERATIONS:
         screen.blit(gen_text, (20, 10))
         pygame.display.flip()
         clock.tick(60)
+
+    # --- Draw tray and take END screenshot ---
+    screen.fill((20, 20, 20))
+    for idx, main in enumerate(games):
+        row = idx // TRAY_COLS
+        col = idx % TRAY_COLS
+        cell_x = ox0 + col * (TRAY_BOARD_W + INFO_PANEL_W + MARGIN)
+        cell_y = oy0 + row * (TRAY_BOARD_H + MARGIN)
+        scaled_surface = pygame.transform.smoothscale(main.game.surface, (TRAY_BOARD_W, TRAY_BOARD_H))
+        screen.blit(scaled_surface, (cell_x, cell_y))
+        pygame.draw.rect(screen, (160, 160, 160), (cell_x, cell_y, TRAY_BOARD_W, TRAY_BOARD_H), 2)
+        info_panel = pygame.Surface((INFO_PANEL_W, TRAY_BOARD_H))
+        draw_info_panel(main, info_panel)
+        screen.blit(info_panel, (cell_x + TRAY_BOARD_W, cell_y))
+        if main.game.is_game_over:
+            go_text = go_font.render("GAME OVER", True, (255,0,0))
+            rect = go_text.get_rect(center=(cell_x + TRAY_BOARD_W//2, cell_y + TRAY_BOARD_H//2))
+            screen.blit(go_text, rect)
+    gen_text = info_font.render(f"Generation: {generation+1}/{GENERATIONS}", True, (0,255,0))
+    screen.blit(gen_text, (20, 10))
+    pygame.display.flip()
+    pygame.image.save(
+        screen,
+        os.path.join(screenshot_dir, f"tray_gen_{generation:03d}_end.png")
+    )
 
     # -- 3. Breed/evolve new population for next generation
     fitness = [f if f is not None else 0 for f in fitness]
