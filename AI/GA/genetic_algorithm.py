@@ -112,6 +112,31 @@ class GA:
         self.population = checkpoint["population"]
         return checkpoint["generation"], checkpoint["history"]
 
+    def save_log(self, history):
+        # Always write the log from the full history up to this point (overwrite)
+        cols = [
+            "Generation",
+            "BestAgentID",
+            "BestFitness",
+            "AvgFitness",
+            "WorstFitness",
+            "FitnessStd",
+            "W1:AggHeight",
+            "W2:Holes",
+            "W3:Blockades",
+            "W4:Bumpiness",
+            "W5:AlmostFull",
+            "W6:FillsWell",
+            "W7:ClearBonus4",
+            "W8:ClearBonus3",
+            "W9:ClearBonus2",
+            "W10:ClearBonus1"
+        ]
+        df = pd.DataFrame(history)
+        df = df[cols]
+        df.to_csv(self.log_file, index=False)
+        print(f"Log saved to {self.log_file}")
+
     def run(self, generations=30, verbose=True):
         history = []
         best_weights = None
@@ -127,6 +152,7 @@ class GA:
             history = []
 
         for gen in range(start_gen, generations):
+            # -- Evaluate and record this generation --
             fitnesses = self.evaluate_population()
             avg_fit = np.mean(fitnesses)
             best_fit = np.max(fitnesses)
@@ -164,31 +190,11 @@ class GA:
                     f"Std {std_fit:.2f}"
                 )
 
+            # Only checkpoint and log *after* the generation is truly complete
+            self.save_log(history)
             self.save_checkpoint(gen, history)
             self.select_and_breed(fitnesses)
 
-        cols = [
-            "Generation",
-            "BestAgentID",
-            "BestFitness",
-            "AvgFitness",
-            "WorstFitness",
-            "FitnessStd",
-            "W1:AggHeight",
-            "W2:Holes",
-            "W3:Blockades",
-            "W4:Bumpiness",
-            "W5:AlmostFull",
-            "W6:FillsWell",
-            "W7:ClearBonus4",
-            "W8:ClearBonus3",
-            "W9:ClearBonus2",
-            "W10:ClearBonus1"
-        ]
-        df = pd.DataFrame(history)
-        df = df[cols]
-        df.to_csv(self.log_file, index=False)
-        print(f"Log saved to {self.log_file}")
         print(f"Checkpoints saved to {self.checkpoint_file}")
 
         return best_weights, [h["BestFitness"] for h in history]

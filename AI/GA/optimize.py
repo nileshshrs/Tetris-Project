@@ -19,7 +19,6 @@ MARGIN = 8
 WINDOW_W, WINDOW_H = 1600, 900
 INFO_PANEL_W = 92
 
-# --- LOG FILES ---
 AGENT_LOG_FILE = r"D:\Tetris-Project\miscellaneous\agent_log.csv"
 GA_LOG_FILE = r"D:\Tetris-Project\miscellaneous\ga_log.csv"
 screenshot_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../AI/assets'))
@@ -31,7 +30,36 @@ AGENT_LOG_HEADER = [
     "W6_FillsWell", "W7_ClearBonus4", "W8_ClearBonus3", "W9_ClearBonus2", "W10_ClearBonus1"
 ]
 
-if not os.path.exists(AGENT_LOG_FILE):
+# --- Checkpoint/Resume Handling ---
+ga = GA(
+    population_size=POP_SIZE,
+    n_weights=N_WEIGHTS,
+    elite_size=2,
+    mutation_rate=0.15,
+    mutation_scale=0.2,
+    log_file="ga_log.csv",
+    checkpoint_file="ga_checkpoint.pkl",
+    misc_dir=r"D:\Tetris-Project\miscellaneous"
+)
+
+if os.path.exists(ga.checkpoint_file):
+    print(f"Checkpoint found! Loading from {ga.checkpoint_file}")
+    last_gen, history = ga.load_checkpoint()
+    start_gen = last_gen + 1
+    print(f"Resuming from generation {start_gen}")
+    # Truncate the logs to last completed generation
+    if os.path.exists(GA_LOG_FILE):
+        df_ga = pd.read_csv(GA_LOG_FILE)
+        df_ga = df_ga[df_ga["Generation"] <= last_gen]
+        df_ga.to_csv(GA_LOG_FILE, index=False)
+    if os.path.exists(AGENT_LOG_FILE):
+        df_agent = pd.read_csv(AGENT_LOG_FILE)
+        df_agent = df_agent[df_agent["Generation"] <= last_gen]
+        df_agent.to_csv(AGENT_LOG_FILE, index=False)
+else:
+    ga.population = [ga._random_weights() for _ in range(POP_SIZE)]
+    start_gen = 0
+    history = []
     with open(AGENT_LOG_FILE, "w", newline="") as f:
         csv.writer(f).writerow(AGENT_LOG_HEADER)
 
@@ -79,26 +107,6 @@ def draw_info_panel(main, panel_surface):
         panel_surface.blit(info_font.render(line, True, (255,255,255)), (7, y))
         y += 18
 
-ga = GA(
-    population_size=POP_SIZE,
-    n_weights=N_WEIGHTS,
-    elite_size=2,
-    mutation_rate=0.15,
-    mutation_scale=0.2,
-    log_file="ga_log.csv",
-    checkpoint_file="ga_checkpoint.pkl",
-    misc_dir=r"D:\Tetris-Project\miscellaneous"
-)
-
-if os.path.exists(ga.checkpoint_file):
-    print(f"Checkpoint found! Loading from {ga.checkpoint_file}")
-    last_gen, history = ga.load_checkpoint()
-    start_gen = last_gen + 1
-else:
-    ga.population = [ga._random_weights() for _ in range(POP_SIZE)]
-    start_gen = 0
-    history = []
-
 generation = start_gen
 running = True
 
@@ -114,12 +122,17 @@ while running and generation < GENERATIONS:
     # --- Run all games for 30 seconds, then take START screenshot ---
     start_time = time.time()
     clock = pygame.time.Clock()
+    # Track force_exit to detect if user kills before completion
+    force_exit = False
     while running and (time.time() - start_time < 30):
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (
                 event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 running = False
+                force_exit = True
                 break
+        if not running or force_exit:
+            break
 
         screen.fill((20, 20, 20))
         for idx, main in enumerate(games):
@@ -140,22 +153,31 @@ while running and generation < GENERATIONS:
         pygame.display.flip()
         clock.tick(60)
 
+    if not running or force_exit:
+        print(f"\nExiting early: generation {generation} incomplete. No checkpoint/log will be written for this generation.\n")
+        break
+
     pygame.image.save(
         screen,
         os.path.join(screenshot_dir, f"tray_gen_{generation:03d}_start.png")
     )
 
     # --- Now run the games to completion as usual (with 25-min force kill) ---
-    TIMEOUT_SECONDS = 1500  # 25 minutes per agent
+    TIMEOUT_SECONDS = 60  # 25 minutes per agent
     agent_start_times = [time.time()] * POP_SIZE
 
     clock = pygame.time.Clock()
     all_done = False
+    force_exit = False
     while not all_done and running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (
                 event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 running = False
+                force_exit = True
+                break
+        if not running or force_exit:
+            break
 
         screen.fill((20, 20, 20))
         all_done = True
@@ -199,6 +221,10 @@ while running and generation < GENERATIONS:
         pygame.display.flip()
         clock.tick(60)
 
+    if not running or force_exit:
+        print(f"\nExiting early: generation {generation} incomplete. No checkpoint/log will be written for this generation.\n")
+        break
+
     # --- Draw tray and take END screenshot ---
     screen.fill((20, 20, 20))
     for idx, main in enumerate(games):
@@ -224,34 +250,42 @@ while running and generation < GENERATIONS:
         os.path.join(screenshot_dir, f"tray_gen_{generation:03d}_end.png")
     )
 
-    # --- AGENT LOGGING ---
-    with open(AGENT_LOG_FILE, "a", newline="") as f:
+    # --- AGENT LOGGING (always re-write the entire agent log after each gen) ---
+    agent_log_rows = []
+    if os.path.exists(AGENT_LOG_FILE):
+        df_agent = pd.read_csv(AGENT_LOG_FILE)
+        df_agent = df_agent[df_agent["Generation"] < generation]  # keep only old generations
+        agent_log_rows = df_agent.values.tolist()
+    for idx, main in enumerate(games):
+        agent_row = [
+            generation,
+            idx,
+            getattr(main.score, "score", 0),
+            getattr(main.lines, "lines", 0),
+            getattr(main.score, "levels", 1),
+            None,
+            getattr(main.score, "num_3line_clears", 0),
+            getattr(main.score, "num_tetrises", 0)
+        ]
+        try:
+            if hasattr(main.score, "frozen_time") and main.score.frozen_time is not None:
+                seconds = main.score.frozen_time
+            else:
+                seconds = int(time.time() - main.score.start_time)
+            agent_row[5] = seconds
+        except Exception:
+            agent_row[5] = 0
+        agent_weights = ga.population[idx]
+        for w in agent_weights:
+            agent_row.append(w)
+        agent_log_rows.append(agent_row)
+    # Always rewrite the full agent log file
+    with open(AGENT_LOG_FILE, "w", newline="") as f:
         writer = csv.writer(f)
-        for idx, main in enumerate(games):
-            agent_row = [
-                generation,
-                idx,
-                getattr(main.score, "score", 0),
-                getattr(main.lines, "lines", 0),
-                getattr(main.score, "levels", 1),
-                None,
-                getattr(main.score, "num_3line_clears", 0),
-                getattr(main.score, "num_tetrises", 0)
-            ]
-            try:
-                if hasattr(main.score, "frozen_time") and main.score.frozen_time is not None:
-                    seconds = main.score.frozen_time
-                else:
-                    seconds = int(time.time() - main.score.start_time)
-                agent_row[5] = seconds
-            except Exception:
-                agent_row[5] = 0
-            agent_weights = ga.population[idx]
-            for w in agent_weights:
-                agent_row.append(w)
-            writer.writerow(agent_row)
+        writer.writerow(AGENT_LOG_HEADER)
+        writer.writerows(agent_log_rows)
 
-    # --- GENERATION LOGGING ---
+    # --- GENERATION LOGGING (history always rewritten by ga.save_log) ---
     fitness = [f if f is not None else 0 for f in fitness]
     avg_fit = np.mean(fitness)
     best_fit = np.max(fitness)
@@ -272,43 +306,41 @@ while running and generation < GENERATIONS:
     print(f"Gen {generation+1}: avg {avg_fit:.1f} best {best_fit} worst {worst_fit} std {std_fit:.2f}")
 
     ga.save_checkpoint(generation, history)
+    expanded_history = []
+    for entry in history:
+        row = {
+            "Generation": entry["Generation"],
+            "BestAgentID": entry["BestAgentID"] if "BestAgentID" in entry else np.nan,
+            "BestFitness": entry["BestFitness"],
+            "AvgFitness": entry["AvgFitness"],
+            "WorstFitness": entry["WorstFitness"],
+            "FitnessStd": entry["FitnessStd"],
+        }
+        weights = entry["BestWeights"]
+        if isinstance(weights, np.ndarray):
+            weights = weights.tolist()
+        row["W1:AggHeight"]    = weights[0]
+        row["W2:Holes"]        = weights[1]
+        row["W3:Blockades"]    = weights[2]
+        row["W4:Bumpiness"]    = weights[3]
+        row["W5:AlmostFull"]   = weights[4]
+        row["W6:FillsWell"]    = weights[5]
+        row["W7:ClearBonus4"]  = weights[6]
+        row["W8:ClearBonus3"]  = weights[7]
+        row["W9:ClearBonus2"]  = weights[8]
+        row["W10:ClearBonus1"] = weights[9]
+        expanded_history.append(row)
+
+    cols = [
+        "Generation", "BestAgentID", "BestFitness", "AvgFitness", "WorstFitness", "FitnessStd",
+        "W1:AggHeight", "W2:Holes", "W3:Blockades", "W4:Bumpiness", "W5:AlmostFull",
+        "W6:FillsWell", "W7:ClearBonus4", "W8:ClearBonus3", "W9:ClearBonus2", "W10:ClearBonus1"
+    ]
+    df = pd.DataFrame(expanded_history)
+    df = df[cols]
+    df.to_csv(GA_LOG_FILE, index=False)
+    print(f"Log saved to {GA_LOG_FILE}")
+    print(f"Agent log saved to {AGENT_LOG_FILE}")
+
     ga.select_and_breed(fitness)
     generation += 1
-
-# --- SAVE GENERATION SUMMARY ---
-expanded_history = []
-for entry in history:
-    row = {
-        "Generation": entry["Generation"],
-        "BestAgentID": entry["BestAgentID"] if "BestAgentID" in entry else np.nan,
-        "BestFitness": entry["BestFitness"],
-        "AvgFitness": entry["AvgFitness"],
-        "WorstFitness": entry["WorstFitness"],
-        "FitnessStd": entry["FitnessStd"],
-    }
-    weights = entry["BestWeights"]
-    if isinstance(weights, np.ndarray):
-        weights = weights.tolist()
-    row["W1:AggHeight"]    = weights[0]
-    row["W2:Holes"]        = weights[1]
-    row["W3:Blockades"]    = weights[2]
-    row["W4:Bumpiness"]    = weights[3]
-    row["W5:AlmostFull"]   = weights[4]
-    row["W6:FillsWell"]    = weights[5]
-    row["W7:ClearBonus4"]  = weights[6]
-    row["W8:ClearBonus3"]  = weights[7]
-    row["W9:ClearBonus2"]  = weights[8]
-    row["W10:ClearBonus1"] = weights[9]
-    expanded_history.append(row)
-
-cols = [
-    "Generation", "BestAgentID", "BestFitness", "AvgFitness", "WorstFitness", "FitnessStd",
-    "W1:AggHeight", "W2:Holes", "W3:Blockades", "W4:Bumpiness", "W5:AlmostFull",
-    "W6:FillsWell", "W7:ClearBonus4", "W8:ClearBonus3", "W9:ClearBonus2", "W10:ClearBonus1"
-]
-
-df = pd.DataFrame(expanded_history)
-df = df[cols]
-df.to_csv(GA_LOG_FILE, index=False)
-print(f"Log saved to {GA_LOG_FILE}")
-print(f"Agent log saved to {AGENT_LOG_FILE}")
