@@ -19,6 +19,10 @@ MARGIN = 8
 WINDOW_W, WINDOW_H = 1600, 900
 INFO_PANEL_W = 92
 
+misc_dir = r"D:\Tetris-Project\miscellaneous"
+if not os.path.exists(misc_dir):
+    os.makedirs(misc_dir, exist_ok=True)
+
 AGENT_LOG_FILE = r"D:\Tetris-Project\miscellaneous\agent_log.csv"
 GA_LOG_FILE = r"D:\Tetris-Project\miscellaneous\ga_log.csv"
 screenshot_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../AI/assets'))
