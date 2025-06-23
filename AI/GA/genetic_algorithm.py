@@ -19,7 +19,7 @@ class GA:
         uniform_chance=0.03,
         creep_chance=0.10,
         uniform_range=(-5,20),
-        misc_dir="D:\Tetris-Project\miscellaneous",
+        misc_dir="D:\\Tetris-Project\\miscellaneous",
         log_file="ga_log.csv",
         checkpoint_file="ga_checkpoint.pkl"
     ):
@@ -36,7 +36,6 @@ class GA:
         self.creep_chance = creep_chance
         self.uniform_range = uniform_range
 
-        # File paths (create directory if missing)
         self.misc_dir = os.path.abspath(misc_dir)
         os.makedirs(self.misc_dir, exist_ok=True)
         self.log_file = os.path.join(self.misc_dir, log_file)
@@ -45,7 +44,6 @@ class GA:
         self.population = None
 
     def _random_weights(self):
-        # Use the uniform_range parameter
         return np.random.uniform(*self.uniform_range, self.n_weights).tolist()
 
     def evaluate_population(self):
@@ -134,17 +132,28 @@ class GA:
             best_fit = np.max(fitnesses)
             best_idx = np.argmax(fitnesses)
             worst_fit = np.min(fitnesses)
-            std_fit = np.std(fitnesses)  # <- standard deviation instead of variance
+            std_fit = np.std(fitnesses)
             best_weights = self.population[best_idx]
 
-            history.append({
+            log_entry = {
                 "Generation": gen,
+                "BestAgentID": best_idx,
                 "BestFitness": best_fit,
                 "AvgFitness": avg_fit,
                 "WorstFitness": worst_fit,
                 "FitnessStd": std_fit,
-                "BestWeights": best_weights
-            })
+                "W1:AggHeight": best_weights[0],
+                "W2:Holes": best_weights[1],
+                "W3:Blockades": best_weights[2],
+                "W4:Bumpiness": best_weights[3],
+                "W5:AlmostFull": best_weights[4],
+                "W6:FillsWell": best_weights[5],
+                "W7:ClearBonus4": best_weights[6],
+                "W8:ClearBonus3": best_weights[7],
+                "W9:ClearBonus2": best_weights[8],
+                "W10:ClearBonus1": best_weights[9]
+            }
+            history.append(log_entry)
 
             if verbose:
                 print(
@@ -158,17 +167,27 @@ class GA:
             self.save_checkpoint(gen, history)
             self.select_and_breed(fitnesses)
 
-        # Write log to CSV
         cols = [
             "Generation",
+            "BestAgentID",
             "BestFitness",
             "AvgFitness",
             "WorstFitness",
             "FitnessStd",
-            "BestWeights"
+            "W1:AggHeight",
+            "W2:Holes",
+            "W3:Blockades",
+            "W4:Bumpiness",
+            "W5:AlmostFull",
+            "W6:FillsWell",
+            "W7:ClearBonus4",
+            "W8:ClearBonus3",
+            "W9:ClearBonus2",
+            "W10:ClearBonus1"
         ]
         df = pd.DataFrame(history)
-        df.to_csv(self.log_file, index=False, columns=cols)
+        df = df[cols]
+        df.to_csv(self.log_file, index=False)
         print(f"Log saved to {self.log_file}")
         print(f"Checkpoints saved to {self.checkpoint_file}")
 

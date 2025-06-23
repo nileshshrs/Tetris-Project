@@ -215,6 +215,8 @@ class Game:
         self.lock_timer_active = False
 
     def run(self):
+        if self.is_game_over:
+            return
         self.input()
         # --- AI receives safe lookahead next piece ---
         self.ai.update(next_shape=self.current_next_shape)
