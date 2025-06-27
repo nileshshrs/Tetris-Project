@@ -29,7 +29,7 @@ screenshot_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../
 os.makedirs(screenshot_dir, exist_ok=True)
 
 AGENT_LOG_HEADER = [
-    "Generation", "AgentID", "Score", "Lines", "Level", "Time", "Num3LineClears", "NumTetrises",
+    "Generation", "AgentID", "Score", "Lines", "Level", "Time",
     "W1_AggHeight", "W2_Holes", "W3_Blockades", "W4_Bumpiness", "W5_AlmostFull",
     "W6_FillsWell", "W7_ClearBonus4", "W8_ClearBonus3", "W9_ClearBonus2", "W10:ClearBonus1",
     "BestFitness", "AvgFitness", "WorstFitness", "FitnessStd",
@@ -291,8 +291,6 @@ while running and generation < GENERATIONS:
             getattr(main.lines, "lines", 0),
             getattr(main.score, "levels", 1),
             None,
-            getattr(main.score, "num_3line_clears", 0),
-            getattr(main.score, "num_tetrises", 0)
         ]
         try:
             if hasattr(main.score, "frozen_time") and main.score.frozen_time is not None:
@@ -319,7 +317,6 @@ while running and generation < GENERATIONS:
         writer.writerows(agent_log_rows)
 
     # --- GA LOGGING (write full log every gen, always including header and all columns) ---
-    # Load previous GA log (except for current gen)
     ga_log_rows = []
     if os.path.exists(GA_LOG_FILE):
         df_ga = pd.read_csv(GA_LOG_FILE)
@@ -350,6 +347,8 @@ while running and generation < GENERATIONS:
     print(f"Gen {generation+1}: avg {avg_fitness:.1f} best {best_fitness} worst {worst_fitness} std {fitness_std:.2f}")
     print(f"Log saved to {GA_LOG_FILE}")
     print(f"Agent log saved to {AGENT_LOG_FILE}")
+
+    ga.save_checkpoint(generation, history)  # <-- ADD THIS LINE
 
     ga.select_and_breed(fitness_values, generation)
     generation += 1
