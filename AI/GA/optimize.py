@@ -11,7 +11,7 @@ from genetic_algorithm import GA
 
 # --- CONFIGURATION ---
 N_WEIGHTS = 10
-GENERATIONS = 100
+GENERATIONS = 20
 
 TRAY_COLS, TRAY_ROWS = 4, 2
 POP_SIZE = TRAY_COLS * TRAY_ROWS
@@ -165,7 +165,7 @@ while running and generation < GENERATIONS:
     )
 
     # --- Now run the games to completion as usual (with 25-min force kill) ---
-    TIMEOUT_SECONDS = 60  # 25 minutes per agent
+    TIMEOUT_SECONDS = 900   # 25 minutes per agent
     agent_start_times = [time.time()] * POP_SIZE
 
     clock = pygame.time.Clock()
@@ -353,5 +353,5 @@ while running and generation < GENERATIONS:
     print(f"Log saved to {GA_LOG_FILE}")
     print(f"Agent log saved to {AGENT_LOG_FILE}")
 
-    ga.select_and_breed(fitness)
+    ga.select_and_breed(fitness, generation)
     generation += 1

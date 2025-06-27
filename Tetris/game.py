@@ -39,6 +39,11 @@ class Game:
         self.is_held = False
         self.held_piece = None
 
+        self.num_1line = 0
+        self.num_2line = 0
+        self.num_3line = 0
+        self.num_tetris = 0
+
         self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
         self.tetromino = Tetrominos(
             get_next_tetromino(self.current_bag), 
@@ -204,7 +209,16 @@ class Game:
             x, y = int(block.pos.x), int(block.pos.y)
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
-        self.calculate_score(len(delete_rows))
+        lines = len(delete_rows)
+        if lines == 1:
+            self.num_1line += 1
+        elif lines == 2:
+            self.num_2line += 1
+        elif lines == 3:
+            self.num_3line += 1
+        elif lines == 4:
+            self.num_tetris += 1
+        self.calculate_score(lines)
 
     def lock_tetromino(self):
         for block in self.tetromino.blocks:
