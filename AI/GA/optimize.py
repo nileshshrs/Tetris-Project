@@ -31,16 +31,15 @@ os.makedirs(screenshot_dir, exist_ok=True)
 AGENT_LOG_HEADER = [
     "Generation", "AgentID", "Score", "Lines", "Level", "Time", "Num3LineClears", "NumTetrises",
     "W1_AggHeight", "W2_Holes", "W3_Blockades", "W4_Bumpiness", "W5_AlmostFull",
-    "W6_FillsWell", "W7_ClearBonus4", "W8_ClearBonus3", "W9_ClearBonus2", "W10_ClearBonus1"
+    "W6_FillsWell", "W7_ClearBonus4", "W8_ClearBonus3", "W9_ClearBonus2", "W10:ClearBonus1"
 ]
 
 # --- Checkpoint/Resume Handling ---
 ga = GA(
     population_size=POP_SIZE,
     n_weights=N_WEIGHTS,
-    elite_size=2,
-    mutation_rate=0.15,
-    mutation_scale=0.2,
+    mutation_rate=0.4,
+    mutation_scale=0.5,
     log_file="ga_log.csv",
     checkpoint_file="ga_checkpoint.pkl",
     misc_dir=r"D:\Tetris-Project\miscellaneous"
@@ -126,7 +125,6 @@ while running and generation < GENERATIONS:
     # --- Run all games for 30 seconds, then take START screenshot ---
     start_time = time.time()
     clock = pygame.time.Clock()
-    # Track force_exit to detect if user kills before completion
     force_exit = False
     while running and (time.time() - start_time < 30):
         for event in pygame.event.get():
@@ -204,8 +202,6 @@ while running and generation < GENERATIONS:
             else:
                 if main.score.frozen_time is None:
                     main.score.frozen_time = int(time.time() - main.score.start_time)
-                if fitness[idx] is None:
-                    fitness[idx] = main.game.current_lines
             if not main.game.is_game_over:
                 all_done = False
 
@@ -289,8 +285,19 @@ while running and generation < GENERATIONS:
         writer.writerow(AGENT_LOG_HEADER)
         writer.writerows(agent_log_rows)
 
+    # --- ENSURE EVERY AGENT'S FITNESS IS ASSIGNED ---
+    for idx, main in enumerate(games):
+        if fitness[idx] is None:
+            lines = getattr(main.lines, "lines", 0)
+            score = getattr(main.score, "score", 0)
+            if hasattr(main.score, "frozen_time") and main.score.frozen_time is not None:
+                time_sec = main.score.frozen_time
+            else:
+                time_sec = int(time.time() - main.score.start_time)
+            fitness[idx] = ga.evaluate_agent_fitness(lines, score, time_sec)
+            print(f"[FINAL] Agent {idx}: lines={lines}, score={score}, time={time_sec}, fitness={fitness[idx]}")
+
     # --- GENERATION LOGGING (history always rewritten by ga.save_log) ---
-    fitness = [f if f is not None else 0 for f in fitness]
     avg_fit = np.mean(fitness)
     best_fit = np.max(fitness)
     best_idx = np.argmax(fitness)

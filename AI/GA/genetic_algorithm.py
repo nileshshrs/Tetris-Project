@@ -7,10 +7,9 @@ import os
 class GA:
     def __init__(
         self,
-        evaluate_agent_fn=None,
         population_size=8,
         n_weights=10,
-        elite_size=2,
+        elite_size=1,
         mutation_rate=0.15,
         mutation_scale=0.2,
         blend_prob=0.5,
@@ -18,12 +17,11 @@ class GA:
         creep_scale=0.02,
         uniform_chance=0.03,
         creep_chance=0.10,
-        uniform_range=(-5,20),
+        uniform_range=(-5, 20),
         misc_dir="D:\\Tetris-Project\\miscellaneous",
         log_file="ga_log.csv",
         checkpoint_file="ga_checkpoint.pkl"
     ):
-        self.evaluate_agent_fn = evaluate_agent_fn
         self.population_size = population_size
         self.n_weights = n_weights
         self.elite_size = elite_size
@@ -46,10 +44,15 @@ class GA:
     def _random_weights(self):
         return np.random.uniform(*self.uniform_range, self.n_weights).tolist()
 
+    # --- THIS IS THE ONLY MAJOR CHANGE ---
+    def evaluate_agent_fitness(self, lines, score, time_sec):
+        """Fitness = 0.8*lines + 0.02*score - 0.2*time_sec"""
+        return 0.7 * lines + 0.03 * score - 0.2 * time_sec
+
     def evaluate_population(self):
         fitnesses = []
         for w in self.population:
-            scores = [self.evaluate_agent_fn(w) for _ in range(self.eval_trials)]
+            scores = [self.evaluate_agent_fitness(*w) for _ in range(self.eval_trials)]
             fitnesses.append(np.mean(scores))
         return fitnesses
 
@@ -58,10 +61,17 @@ class GA:
         elite = [self.population[idx] for idx in sorted_idx[:self.elite_size]]
         new_population = elite[:]
         total_fit = sum(fitnesses)
+        # Ensure all fitnesses are >= 0
+        min_fit = min(fitnesses)
+        if min_fit < 0:
+            fitnesses = [f - min_fit for f in fitnesses]
+
+        total_fit = sum(fitnesses)
         if total_fit == 0:
             probs = [1.0 / len(fitnesses)] * len(fitnesses)
         else:
             probs = [f / total_fit for f in fitnesses]
+
         while len(new_population) < self.population_size:
             parent1 = self.population[np.random.choice(range(self.population_size), p=probs)]
             parent2 = self.population[np.random.choice(range(self.population_size), p=probs)]
@@ -137,64 +147,4 @@ class GA:
         df.to_csv(self.log_file, index=False)
         print(f"Log saved to {self.log_file}")
 
-    def run(self, generations=30, verbose=True):
-        history = []
-        best_weights = None
-
-        if os.path.exists(self.checkpoint_file):
-            print(f"Checkpoint found! Loading from {self.checkpoint_file}")
-            last_gen, history = self.load_checkpoint()
-            start_gen = last_gen + 1
-            print(f"Resuming from generation {start_gen}")
-        else:
-            self.population = [self._random_weights() for _ in range(self.population_size)]
-            start_gen = 0
-            history = []
-
-        for gen in range(start_gen, generations):
-            # -- Evaluate and record this generation --
-            fitnesses = self.evaluate_population()
-            avg_fit = np.mean(fitnesses)
-            best_fit = np.max(fitnesses)
-            best_idx = np.argmax(fitnesses)
-            worst_fit = np.min(fitnesses)
-            std_fit = np.std(fitnesses)
-            best_weights = self.population[best_idx]
-
-            log_entry = {
-                "Generation": gen,
-                "BestAgentID": best_idx,
-                "BestFitness": best_fit,
-                "AvgFitness": avg_fit,
-                "WorstFitness": worst_fit,
-                "FitnessStd": std_fit,
-                "W1:AggHeight": best_weights[0],
-                "W2:Holes": best_weights[1],
-                "W3:Blockades": best_weights[2],
-                "W4:Bumpiness": best_weights[3],
-                "W5:AlmostFull": best_weights[4],
-                "W6:FillsWell": best_weights[5],
-                "W7:ClearBonus4": best_weights[6],
-                "W8:ClearBonus3": best_weights[7],
-                "W9:ClearBonus2": best_weights[8],
-                "W10:ClearBonus1": best_weights[9]
-            }
-            history.append(log_entry)
-
-            if verbose:
-                print(
-                    f"Gen {gen+1}: "
-                    f"Avg fitness {avg_fit:.2f}, "
-                    f"Best fitness {best_fit:.2f}, "
-                    f"Worst fitness {worst_fit:.2f}, "
-                    f"Std {std_fit:.2f}"
-                )
-
-            # Only checkpoint and log *after* the generation is truly complete
-            self.save_log(history)
-            self.save_checkpoint(gen, history)
-            self.select_and_breed(fitnesses)
-
-        print(f"Checkpoints saved to {self.checkpoint_file}")
-
-        return best_weights, [h["BestFitness"] for h in history]
+   
