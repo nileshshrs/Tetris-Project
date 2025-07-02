@@ -73,18 +73,18 @@ class Game:
         self.current_lines += lines_cleared
         self.current_score += SCORE_DATA[lines_cleared] * self.current_level
 
-        if self.current_lines / 10 > self.current_level:
-            self.current_level += 1
-            level_to_frames = {
-                1: 48, 2: 48, 3: 43, 4: 38, 5: 33, 6: 28, 7: 23, 8: 18, 9: 13,
-                10: 8, 11: 6, 12: 5, 13: 4, 14: 4, 15: 4, 16: 3, 17: 3, 18: 3,
-                19: 2, 20: 2, 21: 2, 22: 2, 23: 2, 24: 2, 25: 2, 26: 2, 27: 2, 28: 2, 29: 1
-            }
-            frames = level_to_frames.get(self.current_level, 1)
-            base_frames = 48
-            self.drop_speed = (frames / base_frames) * UPDATE_START_SPEED
-            if not self.is_fast_drop:
-                self.timerss['vertical move'].set_interval(self.drop_speed)
+        # if self.current_lines / 10 > self.current_level:
+        #     self.current_level += 1
+        #     level_to_frames = {
+        #         1: 48, 2: 48, 3: 43, 4: 38, 5: 33, 6: 28, 7: 23, 8: 18, 9: 13,
+        #         10: 8, 11: 6, 12: 5, 13: 4, 14: 4, 15: 4, 16: 3, 17: 3, 18: 3,
+        #         19: 2, 20: 2, 21: 2, 22: 2, 23: 2, 24: 2, 25: 2, 26: 2, 27: 2, 28: 2, 29: 1
+        #     }
+        #     frames = level_to_frames.get(self.current_level, 1)
+        #     base_frames = 48
+        #     self.drop_speed = (frames / base_frames) * UPDATE_START_SPEED
+        #     if not self.is_fast_drop:
+        #         self.timerss['vertical move'].set_interval(self.drop_speed)
 
         self.update_score(self.current_lines, self.current_score, self.current_level)
 

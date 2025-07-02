@@ -313,3 +313,18 @@ class TetrisAI:
             clear_bonus
         )
         return cost
+
+#best possible weight from GA
+
+w1={
+  "W1:AggHeight": 5.144482627321173,
+  "W2:Holes": 4.592403558759385,
+  "W3:Blockades": 0.3629109377693661,
+  "W4:Bumpiness": 1.0986703145456884,
+  "W5:AlmostFull": 0.4778186644597975,
+  "W6:FillsWell": 0.8234567284825127,
+  "W7:ClearBonus4": 0.047722264791939265,
+  "W8:ClearBonus3": 0.14853117878737487,
+  "W9:ClearBonus2": 3.5644486713487082,
+  "W10:ClearBonus1": 3.0656886100418195
+}

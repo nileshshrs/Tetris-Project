@@ -1,9 +1,15 @@
+import os
+os.environ["SDL_VIDEODRIVER"] = "dummy"
+
 import pygame
 import time
-import sys, os
+import sys
 import numpy as np
 import csv
-import pandas as pd
+import multiprocessing
+
+pygame.init()
+pygame.display.set_mode((1, 1))
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Tetris')))
 from main import Main
@@ -11,344 +17,242 @@ from genetic_algorithm import GA
 
 # --- CONFIGURATION ---
 N_WEIGHTS = 10
-GENERATIONS = 20
+GENERATIONS = 50
+POP_SIZE = 10
+N_TRAYS = 4
+TIMEOUT_SECONDS = 360
 
-TRAY_COLS, TRAY_ROWS = 4, 2
-POP_SIZE = TRAY_COLS * TRAY_ROWS
-MARGIN = 8
-WINDOW_W, WINDOW_H = 1600, 900
-INFO_PANEL_W = 92
+misc_dir = r"D:\\Tetris-Project\\miscellaneous"
+os.makedirs(misc_dir, exist_ok=True)
+AGENT_LOG_FILE = os.path.join(misc_dir, "agent_log.csv")
+GA_LOG_FILE = os.path.join(misc_dir, "ga_log.csv")
+CHECKPOINT_FILE = os.path.join(misc_dir, "ga_checkpoint.pkl")
 
-misc_dir = r"D:\Tetris-Project\miscellaneous"
-if not os.path.exists(misc_dir):
-    os.makedirs(misc_dir, exist_ok=True)
-
-AGENT_LOG_FILE = r"D:\Tetris-Project\miscellaneous\agent_log.csv"
-GA_LOG_FILE = r"D:\Tetris-Project\miscellaneous\ga_log.csv"
-screenshot_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../AI/assets'))
-os.makedirs(screenshot_dir, exist_ok=True)
+def tray_log_name(prefix, tray):
+    return os.path.join(misc_dir, f"{prefix}_tray_{tray}.csv")
 
 AGENT_LOG_HEADER = [
     "Generation", "AgentID", "Score", "Lines", "Level", "Time",
-    "W1_AggHeight", "W2_Holes", "W3_Blockades", "W4_Bumpiness", "W5_AlmostFull",
-    "W6_FillsWell", "W7_ClearBonus4", "W8_ClearBonus3", "W9_ClearBonus2", "W10:ClearBonus1",
-    "BestFitness", "AvgFitness", "WorstFitness", "FitnessStd",
+    "W1_AggHeight", "W2_Holes", "W3_Blockades", "W4:Bumpiness", "W5:AlmostFull",
+    "W6_FillsWell", "W7:ClearBonus4", "W8:ClearBonus3", "W9:ClearBonus2", "W10:ClearBonus1",
     "Num1Line", "Num2Line", "Num3Line", "NumTetris"
 ]
 
 GA_LOG_HEADER = [
     "Generation", "BestAgentID", "BestFitness", "AvgFitness", "WorstFitness", "FitnessStd",
+    "BestScore", "BestLines", "BestLevel", "BestTime",
     "Num1Line", "Num2Line", "Num3Line", "NumTetris",
     "W1:AggHeight", "W2:Holes", "W3:Blockades", "W4:Bumpiness", "W5:AlmostFull",
     "W6:FillsWell", "W7:ClearBonus4", "W8:ClearBonus3", "W9:ClearBonus2", "W10:ClearBonus1"
 ]
 
-# --- Checkpoint/Resume Handling ---
-ga = GA(
-    population_size=POP_SIZE,
-    n_weights=N_WEIGHTS,
-    mutation_rate=0.4,
-    mutation_scale=0.5,
-    log_file="ga_log.csv",
-    checkpoint_file="ga_checkpoint.pkl",
-    misc_dir=r"D:\Tetris-Project\miscellaneous"
-)
+def run_tray(tray, generation, population, fitness_fn, result_queue):
+    import os
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
+    import pygame
+    pygame.init()
+    pygame.display.set_mode((1, 1))
 
-if os.path.exists(ga.checkpoint_file):
-    print(f"Checkpoint found! Loading from {ga.checkpoint_file}")
-    last_gen, history = ga.load_checkpoint()
-    start_gen = last_gen + 1
-    print(f"Resuming from generation {start_gen}")
-    # Truncate the logs to last completed generation
-    if os.path.exists(GA_LOG_FILE):
-        df_ga = pd.read_csv(GA_LOG_FILE)
-        df_ga = df_ga[df_ga["Generation"] <= last_gen]
-        df_ga.to_csv(GA_LOG_FILE, index=False)
-    if os.path.exists(AGENT_LOG_FILE):
-        df_agent = pd.read_csv(AGENT_LOG_FILE)
-        df_agent = df_agent[df_agent["Generation"] <= last_gen]
-        df_agent.to_csv(AGENT_LOG_FILE, index=False)
-else:
-    ga.population = [ga._random_weights() for _ in range(POP_SIZE)]
-    start_gen = 0
-    history = []
-    with open(AGENT_LOG_FILE, "w", newline="") as f:
-        csv.writer(f).writerow(AGENT_LOG_HEADER)
-    with open(GA_LOG_FILE, "w", newline="") as f:
-        csv.writer(f).writerow(GA_LOG_HEADER)
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Tetris')))
+    from main import Main
 
-pygame.init()
-screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
-pygame.display.set_caption("Tetris GA Tray")
-tray_cell_w = (WINDOW_W - (TRAY_COLS + 1) * MARGIN) // TRAY_COLS
-tray_cell_h = (WINDOW_H - (TRAY_ROWS + 1) * MARGIN) // TRAY_ROWS
-TRAY_BOARD_W = int(tray_cell_w - INFO_PANEL_W)
-TRAY_BOARD_H = tray_cell_h
-total_grid_w = TRAY_COLS * (TRAY_BOARD_W + INFO_PANEL_W) + (TRAY_COLS + 1) * MARGIN
-total_grid_h = TRAY_ROWS * TRAY_BOARD_H + (TRAY_ROWS + 1) * MARGIN
-ox0 = (WINDOW_W - total_grid_w) // 2 + MARGIN
-oy0 = (WINDOW_H - total_grid_h) // 2 + MARGIN
-info_font = pygame.font.SysFont("arial", 15, bold=True)
-go_font = pygame.font.SysFont("arial", 24, bold=True)
+    print(f"[{time.strftime('%X')}] [TRAY {tray}] Starting for Gen {generation}")
+    tray_agent_log_rows = []
+    fitness_values = np.zeros(len(population))
+    agent_stats = np.zeros((len(population), 8)) # Score, Lines, Level, Time, Num1,2,3,Tetris
 
-def draw_info_panel(main, panel_surface):
-    score = getattr(main.score, "score", 0)
-    lines = getattr(main.lines, "lines", 0)
-    level = getattr(main.score, "levels", 1)
-    try:
-        if hasattr(main.score, "frozen_time") and main.score.frozen_time is not None:
-            seconds = main.score.frozen_time
-        else:
-            seconds = int(time.time() - main.score.start_time)
-        time_str = main.score.format_time(seconds)
-    except Exception:
-        time_str = "00:00:00"
-    next_shapes = getattr(main, "next_shapes", [])
-    if isinstance(next_shapes, list):
-        next_str = " ".join(next_shapes)
-    else:
-        next_str = str(next_shapes)
-    info_lines = [
-        f"Score:", f"{score}",
-        f"Lines:", f"{lines}",
-        f"Level:", f"{level}",
-        f"Time:", f"{time_str}",
-        f"Next:", f"{next_str}"
-    ]
-    panel_surface.fill((24,24,24))
-    y = 9
-    for line in info_lines:
-        panel_surface.blit(info_font.render(line, True, (255,255,255)), (7, y))
-        y += 18
-
-generation = start_gen
-running = True
-
-while running and generation < GENERATIONS:
+    start_times = [time.time()] * len(population)
     games = []
-    for i in range(POP_SIZE):
+    for i in range(len(population)):
         g = Main()
-        g.game.ai.weights = ga.population[i]
+        g.game.ai.weights = population[i]
         games.append(g)
-
-    fitness = [None] * POP_SIZE
-
-    start_time = time.time()
-    clock = pygame.time.Clock()
-    force_exit = False
-    while running and (time.time() - start_time < 30):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT or (
-                event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                running = False
-                force_exit = True
-                break
-        if not running or force_exit:
-            break
-
-        screen.fill((20, 20, 20))
-        for idx, main in enumerate(games):
-            if not main.game.is_game_over:
-                main.game.run()
-            row = idx // TRAY_COLS
-            col = idx % TRAY_COLS
-            cell_x = ox0 + col * (TRAY_BOARD_W + INFO_PANEL_W + MARGIN)
-            cell_y = oy0 + row * (TRAY_BOARD_H + MARGIN)
-            scaled_surface = pygame.transform.smoothscale(main.game.surface, (TRAY_BOARD_W, TRAY_BOARD_H))
-            screen.blit(scaled_surface, (cell_x, cell_y))
-            pygame.draw.rect(screen, (160, 160, 160), (cell_x, cell_y, TRAY_BOARD_W, TRAY_BOARD_H), 2)
-            info_panel = pygame.Surface((INFO_PANEL_W, TRAY_BOARD_H))
-            draw_info_panel(main, info_panel)
-            screen.blit(info_panel, (cell_x + TRAY_BOARD_W, cell_y))
-        gen_text = info_font.render(f"Generation: {generation+1}/{GENERATIONS}", True, (0,255,0))
-        screen.blit(gen_text, (20, 10))
-        pygame.display.flip()
-        clock.tick(60)
-
-    if not running or force_exit:
-        print(f"\nExiting early: generation {generation} incomplete. No checkpoint/log will be written for this generation.\n")
-        break
-
-    pygame.image.save(
-        screen,
-        os.path.join(screenshot_dir, f"tray_gen_{generation:03d}_start.png")
-    )
-
-    TIMEOUT_SECONDS = 900   # 25 minutes per agent
-    agent_start_times = [time.time()] * POP_SIZE
-
-    clock = pygame.time.Clock()
+    done = [False] * len(population)
     all_done = False
-    force_exit = False
-    while not all_done and running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT or (
-                event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                running = False
-                force_exit = True
-                break
-        if not running or force_exit:
-            break
 
-        screen.fill((20, 20, 20))
+    while not all_done:
         all_done = True
         for idx, main in enumerate(games):
-            row = idx // TRAY_COLS
-            col = idx % TRAY_COLS
-            cell_x = ox0 + col * (TRAY_BOARD_W + INFO_PANEL_W + MARGIN)
-            cell_y = oy0 + row * (TRAY_BOARD_H + MARGIN)
-
-            elapsed = time.time() - agent_start_times[idx]
+            if done[idx]:
+                continue
+            elapsed = time.time() - start_times[idx]
+            if elapsed > TIMEOUT_SECONDS:
+                main.game.is_game_over = True
+                if main.score.frozen_time is None:
+                    main.score.frozen_time = TIMEOUT_SECONDS
+                done[idx] = True
+                continue
             if not main.game.is_game_over:
-                if elapsed > TIMEOUT_SECONDS:
-                    print(f"Agent {idx} killed after timeout ({TIMEOUT_SECONDS} seconds)")
-                    main.game.is_game_over = True
-                    if hasattr(main.game, "create_new_tetromino"):
-                        main.game.create_new_tetromino()
-                    main.game.run()
-                else:
-                    main.game.run()
+                main.game.run()
             else:
                 if main.score.frozen_time is None:
-                    main.score.frozen_time = int(time.time() - main.score.start_time)
-            if not main.game.is_game_over:
+                    main.score.frozen_time = int(elapsed)
+                done[idx] = True
+            if not done[idx]:
                 all_done = False
 
-            scaled_surface = pygame.transform.smoothscale(main.game.surface, (TRAY_BOARD_W, TRAY_BOARD_H))
-            screen.blit(scaled_surface, (cell_x, cell_y))
-            pygame.draw.rect(screen, (160, 160, 160), (cell_x, cell_y, TRAY_BOARD_W, TRAY_BOARD_H), 2)
-            info_panel = pygame.Surface((INFO_PANEL_W, TRAY_BOARD_H))
-            draw_info_panel(main, info_panel)
-            screen.blit(info_panel, (cell_x + TRAY_BOARD_W, cell_y))
-            if main.game.is_game_over:
-                go_text = go_font.render("GAME OVER", True, (255,0,0))
-                rect = go_text.get_rect(center=(cell_x + TRAY_BOARD_W//2, cell_y + TRAY_BOARD_H//2))
-                screen.blit(go_text, rect)
-
-        gen_text = info_font.render(f"Generation: {generation+1}/{GENERATIONS}", True, (0,255,0))
-        screen.blit(gen_text, (20, 10))
-        pygame.display.flip()
-        clock.tick(60)
-
-    if not running or force_exit:
-        print(f"\nExiting early: generation {generation} incomplete. No checkpoint/log will be written for this generation.\n")
-        break
-
-    screen.fill((20, 20, 20))
     for idx, main in enumerate(games):
-        row = idx // TRAY_COLS
-        col = idx % TRAY_COLS
-        cell_x = ox0 + col * (TRAY_BOARD_W + INFO_PANEL_W + MARGIN)
-        cell_y = oy0 + row * (TRAY_BOARD_H + MARGIN)
-        scaled_surface = pygame.transform.smoothscale(main.game.surface, (TRAY_BOARD_W, TRAY_BOARD_H))
-        screen.blit(scaled_surface, (cell_x, cell_y))
-        pygame.draw.rect(screen, (160, 160, 160), (cell_x, cell_y, TRAY_BOARD_W, TRAY_BOARD_H), 2)
-        info_panel = pygame.Surface((INFO_PANEL_W, TRAY_BOARD_H))
-        draw_info_panel(main, info_panel)
-        screen.blit(info_panel, (cell_x + TRAY_BOARD_W, cell_y))
-        if main.game.is_game_over:
-            go_text = go_font.render("GAME OVER", True, (255,0,0))
-            rect = go_text.get_rect(center=(cell_x + TRAY_BOARD_W//2, cell_y + TRAY_BOARD_H//2))
-            screen.blit(go_text, rect)
-    gen_text = info_font.render(f"Generation: {generation+1}/{GENERATIONS}", True, (0,255,0))
-    screen.blit(gen_text, (20, 10))
-    pygame.display.flip()
-    pygame.image.save(
-        screen,
-        os.path.join(screenshot_dir, f"tray_gen_{generation:03d}_end.png")
-    )
-
-    # --- AGENT LOGGING (write full log every gen) ---
-    agent_log_rows = []
-    if os.path.exists(AGENT_LOG_FILE):
-        df_agent = pd.read_csv(AGENT_LOG_FILE)
-        df_agent = df_agent[df_agent["Generation"] < generation]  # keep only old generations
-        agent_log_rows = df_agent.values.tolist()
-
-    # Calculate all fitness values and stats
-    fitness_values = []
-    for idx, main in enumerate(games):
+        elapsed = time.time() - start_times[idx]
+        if main.score.frozen_time is None:
+            main.score.frozen_time = min(int(elapsed), TIMEOUT_SECONDS)
         lines = getattr(main.lines, "lines", 0)
         score = getattr(main.score, "score", 0)
-        if hasattr(main.score, "frozen_time") and main.score.frozen_time is not None:
-            time_sec = main.score.frozen_time
-        else:
-            time_sec = int(time.time() - main.score.start_time)
-        fitness_val = ga.evaluate_agent_fitness(lines, score, time_sec)
-        fitness_values.append(fitness_val)
+        time_sec = main.score.frozen_time
 
-    fitness_np = np.array(fitness_values)
-    best_fitness = np.max(fitness_np)
-    avg_fitness = np.mean(fitness_np)
-    worst_fitness = np.min(fitness_np)
-    fitness_std = np.std(fitness_np)
+        fitness = fitness_fn(lines, score, time_sec)
+        fitness_values[idx] = fitness
 
-    for idx, main in enumerate(games):
         agent_row = [
             generation,
             idx,
-            getattr(main.score, "score", 0),
-            getattr(main.lines, "lines", 0),
+            score,
+            lines,
             getattr(main.score, "levels", 1),
-            None,
+            time_sec,
+        ] + population[idx] + [
+            getattr(main.game, "num_1line", 0),
+            getattr(main.game, "num_2line", 0),
+            getattr(main.game, "num_3line", 0),
+            getattr(main.game, "num_tetris", 0),
         ]
-        try:
-            if hasattr(main.score, "frozen_time") and main.score.frozen_time is not None:
-                seconds = main.score.frozen_time
-            else:
-                seconds = int(time.time() - main.score.start_time)
-            agent_row[5] = seconds
-        except Exception:
-            agent_row[5] = 0
-        agent_weights = ga.population[idx]
-        for w in agent_weights:
-            agent_row.append(w)
-        num_1line   = getattr(main.game, "num_1line", 0)
-        num_2line   = getattr(main.game, "num_2line", 0)
-        num_3line   = getattr(main.game, "num_3line", 0)
-        num_tetris  = getattr(main.game, "num_tetris", 0)
-        agent_row += [best_fitness, avg_fitness, worst_fitness, fitness_std, num_1line, num_2line, num_3line, num_tetris]
-        agent_log_rows.append(agent_row)
+        tray_agent_log_rows.append(agent_row)
+        agent_stats[idx,0] = score
+        agent_stats[idx,1] = lines
+        agent_stats[idx,2] = getattr(main.score, "levels", 1)
+        agent_stats[idx,3] = time_sec
+        agent_stats[idx,4] = getattr(main.game, "num_1line", 0)
+        agent_stats[idx,5] = getattr(main.game, "num_2line", 0)
+        agent_stats[idx,6] = getattr(main.game, "num_3line", 0)
+        agent_stats[idx,7] = getattr(main.game, "num_tetris", 0)
 
-    # Write full agent log every gen, always including header and all columns
-    with open(AGENT_LOG_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(AGENT_LOG_HEADER)
-        writer.writerows(agent_log_rows)
+    with open(tray_log_name("agent_log", tray), "a", newline="") as f:
+        csv.writer(f).writerows(tray_agent_log_rows)
 
-    # --- GA LOGGING (write full log every gen, always including header and all columns) ---
-    ga_log_rows = []
-    if os.path.exists(GA_LOG_FILE):
-        df_ga = pd.read_csv(GA_LOG_FILE)
-        df_ga = df_ga[df_ga["Generation"] < generation]
-        ga_log_rows = df_ga.values.tolist()
-
-    best_idx = int(np.argmax(fitness_np))
-    best_agent_game = games[best_idx]
-    num_1line   = getattr(best_agent_game.game, "num_1line", 0)
-    num_2line   = getattr(best_agent_game.game, "num_2line", 0)
-    num_3line   = getattr(best_agent_game.game, "num_3line", 0)
-    num_tetris  = getattr(best_agent_game.game, "num_tetris", 0)
-    best_weights = ga.population[best_idx]
+    best_idx = int(np.argmax(fitness_values))
+    best_game_stats = agent_stats[best_idx]
     ga_row = [
-        generation, best_idx, best_fitness, avg_fitness, worst_fitness, fitness_std,
-        num_1line, num_2line, num_3line, num_tetris
-    ]
-    if isinstance(best_weights, np.ndarray):
-        best_weights = best_weights.tolist()
-    ga_row += best_weights
-    ga_log_rows.append(ga_row)
+        generation, best_idx,
+        np.max(fitness_values),
+        np.mean(fitness_values),
+        np.min(fitness_values),
+        np.std(fitness_values),
+        best_game_stats[0],
+        best_game_stats[1],
+        best_game_stats[2],
+        best_game_stats[3],
+        best_game_stats[4],
+        best_game_stats[5],
+        best_game_stats[6],
+        best_game_stats[7],
+    ] + population[best_idx]
 
-    with open(GA_LOG_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(GA_LOG_HEADER)
-        writer.writerows(ga_log_rows)
+    with open(tray_log_name("ga_log", tray), "a", newline="") as f:
+        csv.writer(f).writerow(ga_row)
 
-    print(f"Gen {generation+1}: avg {avg_fitness:.1f} best {best_fitness} worst {worst_fitness} std {fitness_std:.2f}")
-    print(f"Log saved to {GA_LOG_FILE}")
-    print(f"Agent log saved to {AGENT_LOG_FILE}")
+    print(f"[{time.strftime('%X')}] [TRAY {tray}] Finished Gen {generation}")
+    result_queue.put((tray, fitness_values.tolist(), agent_stats.tolist()))
 
-    ga.save_checkpoint(generation, history)  # <-- ADD THIS LINE
+if __name__ == '__main__':
+    ga = GA(
+        population_size=POP_SIZE,
+        n_weights=N_WEIGHTS,
+        log_file="ga_log.csv",
+        checkpoint_file=CHECKPOINT_FILE,
+        misc_dir=misc_dir
+    )
 
-    ga.select_and_breed(fitness_values, generation)
-    generation += 1
+    if not os.path.exists(CHECKPOINT_FILE):
+        ga.population = [ga._random_weights() for _ in range(POP_SIZE)]
+        start_gen = 0
+        history = []
+        with open(AGENT_LOG_FILE, "w", newline="") as f:
+            csv.writer(f).writerow([
+                "Generation", "AgentID", "AvgScore", "AvgLines", "AvgLevel", "AvgTime"
+            ] + [f"W{i+1}" for i in range(10)] + [
+                "AvgNum1Line", "AvgNum2Line", "AvgNum3Line", "AvgNumTetris"
+            ])
+        with open(GA_LOG_FILE, "w", newline="") as f:
+            csv.writer(f).writerow(GA_LOG_HEADER)
+        for tray in range(N_TRAYS):
+            with open(tray_log_name("agent_log", tray), "w", newline="") as f:
+                csv.writer(f).writerow(AGENT_LOG_HEADER)
+            with open(tray_log_name("ga_log", tray), "w", newline="") as f:
+                csv.writer(f).writerow(GA_LOG_HEADER)
+    else:
+        last_gen, history = ga.load_checkpoint()
+        start_gen = last_gen + 1
+
+    generation = start_gen
+    while generation < GENERATIONS:
+        params = ga.current_params(generation)
+        print(f"\n========================")
+        print(f"===> [MAIN] Generation {generation} starting...")
+        print(f"  (mutation_rate={params['mutation_rate']:.3f}, mutation_scale={params['mutation_scale']:.3f}, "
+              f"creep_scale={params['creep_scale']:.3f}, blend_prob={params['blend_prob']:.3f}, "
+              f"uniform_chance={params['uniform_chance']:.3f}, creep_chance={params['creep_chance']:.3f})")
+        t0 = time.time()
+        result_queue = multiprocessing.Queue()
+        procs = []
+        for tray in range(N_TRAYS):
+            p = multiprocessing.Process(
+                target=run_tray,
+                args=(tray, generation, ga.population, ga.evaluate_agent_fitness, result_queue)
+            )
+            p.start()
+            procs.append(p)
+
+        fitness_matrix = np.zeros((N_TRAYS, POP_SIZE))
+        agent_stats_matrix = np.zeros((N_TRAYS, POP_SIZE, 8))
+        for _ in range(N_TRAYS):
+            tray, fitnesses, stats = result_queue.get()
+            fitness_matrix[tray, :] = fitnesses
+            agent_stats_matrix[tray, :, :] = stats
+
+        for p in procs:
+            p.join()
+
+        elapsed = time.time() - t0
+        print(f"[{time.strftime('%X')}] [MAIN] All trays finished for generation {generation} in {elapsed:.2f}s")
+        print(f"===> [MAIN] Advancing to next generation {generation+1}\n========================\n")
+
+        aggregate_agent_stats = np.mean(agent_stats_matrix, axis=0)
+        fitness_values = np.mean(fitness_matrix, axis=0).tolist()
+        best_idx = int(np.argmax(fitness_values))
+        avg_stats = aggregate_agent_stats[best_idx]
+        ga_row = [
+            generation, best_idx,
+            np.max(fitness_values),
+            np.mean(fitness_values),
+            np.min(fitness_values),
+            np.std(fitness_values),
+            avg_stats[0],  # avg score
+            avg_stats[1],  # avg lines
+            avg_stats[2],  # avg level
+            avg_stats[3],  # avg time
+            avg_stats[4],  # avg 1line
+            avg_stats[5],  # avg 2line
+            avg_stats[6],  # avg 3line
+            avg_stats[7],  # avg tetris
+        ] + ga.population[best_idx]
+
+        with open(AGENT_LOG_FILE, "a", newline="") as f:
+            writer = csv.writer(f)
+            for idx in range(POP_SIZE):
+                writer.writerow(
+                    [generation, idx] +
+                    aggregate_agent_stats[idx, 0:4].tolist() +
+                    ga.population[idx] +
+                    aggregate_agent_stats[idx, 4:8].tolist()
+                )
+
+        with open(GA_LOG_FILE, "a", newline="") as f:
+            csv.writer(f).writerow(ga_row)
+
+        print(f"Gen {generation+1}: avg {ga_row[3]:.1f} best {ga_row[2]} worst {ga_row[4]} std {ga_row[5]:.2f}")
+
+        ga.select_and_breed(fitness_values, generation)
+        history.append(fitness_values)
+        ga.save_checkpoint(generation, history)
+        generation += 1
+
+    pygame.quit()
