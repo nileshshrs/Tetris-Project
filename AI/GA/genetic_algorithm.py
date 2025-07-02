@@ -25,6 +25,9 @@ class GA:
         self.population = None
         self.uniform_range = (1e-4, 19.9999)
 
+        # To store the adaptive hyperparameters per generation
+        self.param_history = []
+
     # --- Adaptive parameter schedules ---
     def _ramp(self, start, stop, gen, ramp_gen=30):
         if gen >= ramp_gen:
@@ -35,25 +38,13 @@ class GA:
         ramp_gens = 38  # takes 60 generations to ramp to the end values
 
         return {
-            # mutation_rate: Probability that *each gene* will be mutated
-            "mutation_rate": self._ramp(0.65, 0.28, generation, ramp_gen=ramp_gens),   # high mutation for longer
-
-            # mutation_scale: Stddev of the gaussian noise for normal mutations
+            "mutation_rate": self._ramp(0.65, 0.28, generation, ramp_gen=ramp_gens),
             "mutation_scale": self._ramp(0.55, 0.21, generation, ramp_gen=ramp_gens),
-
-            # creep_scale: Small-range "creep" mutation (add/subtract a small value)
             "creep_scale": self._ramp(0.10, 0.04, generation, ramp_gen=ramp_gens),
-
-            # blend_prob: Probability to use blend crossover instead of direct gene pick
             "blend_prob": self._ramp(0.82, 0.51, generation, ramp_gen=ramp_gens),
-
-            # uniform_chance: Probability to do a full random gene reset (per gene)
             "uniform_chance": self._ramp(0.34, 0.13, generation, ramp_gen=ramp_gens),
-
-            # creep_chance: Probability to do a "creep" small mutation (per gene)
             "creep_chance": self._ramp(0.37, 0.20, generation, ramp_gen=ramp_gens),
         }
-
 
     def _random_weights(self):
         return list(np.random.uniform(*self.uniform_range, self.n_weights))
@@ -125,24 +116,11 @@ class GA:
         best_idx = max(contenders_idx, key=lambda i: fitnesses[i])
         return best_idx
 
-    def nudge(self, elite, params):
-        w = list(elite)
-        nudge_amt = params["creep_scale"]
-        for i in range(len(w)):
-            w[i] += np.random.uniform(-nudge_amt, nudge_amt)
-        return self.reflect_bounds(w, *self.uniform_range)
-
-    # --- Use the original random immigrant logic ---
-    def make_random_immigrant(self, elite_weights):
-        w = np.array(elite_weights)
-        n = len(w)
-        random_values = np.random.uniform(0.75, 2, n)
-        operations = np.random.choice([1, -1], size=n)
-        new_w = w + random_values * operations
-        return self.reflect_bounds(new_w, *self.uniform_range)
-
     def select_and_breed(self, fitnesses, generation):
         params = self.current_params(generation)
+        # --- LOG the adaptive params for this generation
+        self.param_history.append(params.copy())
+
         sorted_idx = np.argsort(fitnesses)[::-1]
         elite = [self.population[idx] for idx in sorted_idx[:self.elite_size]]
         new_population = elite[:]
@@ -182,24 +160,6 @@ class GA:
         for i in range(self.elite_size, len(new_population)):
             new_population[i] = self.mutate(new_population[i], params)
 
-        # # --- Random immigrant and nudge every 2 generations, replace worst 2 non-elites ---
-        # if generation > 0 and generation % 5 == 0:
-        #     nonelite_idxs = list(range(self.elite_size, len(new_population)))
-        #     if len(nonelite_idxs) >= 2:
-        #         nonelite_fitnesses = [fitnesses[sorted_idx[self.elite_size + i]] for i in range(len(nonelite_idxs))]
-        #         worst_two_idx = np.argsort(nonelite_fitnesses)[:2]
-        #         replace_indices = [nonelite_idxs[i] for i in worst_two_idx]
-
-        #         immigrant_elite = random.choice(elite)
-        #         immigrant = self.make_random_immigrant(immigrant_elite)
-        #         new_population[replace_indices[0]] = immigrant
-
-        #         nudge_elite = random.choice(elite)
-        #         nudged = self.nudge(nudge_elite, params)
-        #         new_population[replace_indices[1]] = nudged
-
-        #         print(f"[GA] Injected immigrant at idx {replace_indices[0]}, nudged elite at idx {replace_indices[1]} (gen {generation})")
-
         self.population = new_population
 
     def save_checkpoint(self, generation, history):
@@ -207,6 +167,7 @@ class GA:
             "population": self.population,
             "generation": generation,
             "history": history,
+            "param_history": self.param_history,  # --- Save param history!
         }
         with open(self.checkpoint_file, "wb") as f:
             pickle.dump(checkpoint, f)
@@ -216,9 +177,28 @@ class GA:
         with open(self.checkpoint_file, "rb") as f:
             checkpoint = pickle.load(f)
         self.population = checkpoint["population"]
-        return checkpoint["generation"], checkpoint["history"]
+        self.param_history = checkpoint.get("param_history", [])
+        generation = checkpoint["generation"]
+        history = checkpoint["history"]
+        print("=" * 48)
+        print(f"Loaded checkpoint at generation: {generation}")
+        # Print parameters for this generation (if available)
+        if self.param_history and len(self.param_history) > generation:
+            params = self.param_history[generation]
+            print(f"Adaptive parameters at gen {generation}:")
+            for k, v in params.items():
+                print(f"  {k}: {v:.4f}")
+        else:
+            print("No adaptive parameter history found for this generation.")
+        # Print weights for each agent in population
+        print(f"Population weights at gen {generation}:")
+        for idx, w in enumerate(self.population):
+            print(f"  Agent {idx}: {np.array2string(np.array(w), precision=4, separator=', ')}")
+        print("=" * 48)
+        return generation, history
 
     def save_log(self, history):
+        # Optionally include param history as columns in CSV
         cols = [
             "Generation",
             "BestAgentID",
@@ -238,6 +218,10 @@ class GA:
             "W10:ClearBonus1"
         ]
         df = pd.DataFrame(history)
-        df = df[cols]
+        # Attach hyperparameters to log file if needed
+        if len(self.param_history) == len(df):
+            for k in self.param_history[0].keys():
+                df[k] = [ph[k] for ph in self.param_history]
+        df = df[cols + list(self.param_history[0].keys())] if len(self.param_history) == len(df) else df[cols]
         df.to_csv(self.log_file, index=False)
         print(f"Log saved to {self.log_file}")
