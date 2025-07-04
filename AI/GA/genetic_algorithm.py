@@ -3,6 +3,7 @@ import random
 import pandas as pd
 import pickle
 import os
+import math
 
 class GA:
     def __init__(
@@ -38,19 +39,39 @@ class GA:
         ramp_gens = 38  # takes 60 generations to ramp to the end values
 
         return {
-            "mutation_rate": self._ramp(0.65, 0.28, generation, ramp_gen=ramp_gens),
-            "mutation_scale": self._ramp(0.55, 0.21, generation, ramp_gen=ramp_gens),
-            "creep_scale": self._ramp(0.10, 0.04, generation, ramp_gen=ramp_gens),
-            "blend_prob": self._ramp(0.82, 0.51, generation, ramp_gen=ramp_gens),
-            "uniform_chance": self._ramp(0.34, 0.13, generation, ramp_gen=ramp_gens),
-            "creep_chance": self._ramp(0.37, 0.20, generation, ramp_gen=ramp_gens),
+            "mutation_rate": self._ramp(0.6, 0.185, generation, ramp_gen=ramp_gens),     # up from 0.475, 0.12
+            "mutation_scale": self._ramp(0.45, 0.15, generation, ramp_gen=ramp_gens),    # up from 0.35, 0.09
+            "creep_scale": self._ramp(0.08, 0.03, generation, ramp_gen=ramp_gens),     # up from 0.06, 0.02
+            "blend_prob": self._ramp(0.85, 0.56, generation, ramp_gen=ramp_gens),        # up from 0.72, 0.48
+            "uniform_chance": self._ramp(0.35, 0.15, generation, ramp_gen=ramp_gens),    # up from 0.22, 0.08
+            "creep_chance": self._ramp(0.3, 0.15, generation, ramp_gen=ramp_gens),      # up from 0.25, 0.10
         }
+   
 
     def _random_weights(self):
         return list(np.random.uniform(*self.uniform_range, self.n_weights))
 
-    def evaluate_agent_fitness(self, lines, score, time_sec):
-        return 0.4 * lines + 0.03 * score - 0.5 * time_sec
+
+    def evaluate_agent_fitness(self, lines, score, time_sec, num_tetris, max_time=360):
+        # Core rewards
+        line_score = 0.6 * lines                 # Increased line reward
+        tetris_score = 4.5 * num_tetris          # Heavily reward tetrises (adjust as needed)
+        score_bonus = 0.03 * score              # Score helps, not dominant
+
+        # Mild penalty for surviving too long without action
+        time_penalty = 0.5 * time_sec          
+
+        # Death penalty for failing to reach 75% of max time
+        death_penalty = 0
+        min_survival = 0.9 * max_time           # e.g., 270 seconds if max_time=360
+        if time_sec < min_survival:
+            # Log penalty—more forgiving for close calls, harsher for early deaths
+            death_penalty = math.log((min_survival - time_sec) + 1) * 8
+
+        # Final fitness calculation
+        fitness = line_score + tetris_score + score_bonus - time_penalty - death_penalty
+        return fitness
+
 
     def reflect_bounds(self, w, minval=1e-4, maxval=19.9999):
         new_w = []
@@ -151,8 +172,8 @@ class GA:
             new_population.append(child)
 
         for _ in range(tournament_count):
-            i1 = self.tournament_select(self.population, fitnesses, k=4)
-            i2 = self.tournament_select(self.population, fitnesses, k=4)
+            i1 = self.tournament_select(self.population, fitnesses, k=3)
+            i2 = self.tournament_select(self.population, fitnesses, k=3)
             w1, w2 = self.population[i1], self.population[i2]
             child = self.weighted_avg_crossover(w1, w2, adj_fitnesses[i1], adj_fitnesses[i2])
             new_population.append(child)

@@ -98,8 +98,9 @@ def run_tray(tray, generation, population, fitness_fn, result_queue):
         lines = getattr(main.lines, "lines", 0)
         score = getattr(main.score, "score", 0)
         time_sec = main.score.frozen_time
+        num_tetris = getattr(main.game, "num_tetris", 0)
 
-        fitness = fitness_fn(lines, score, time_sec)
+        fitness = fitness_fn(lines, score, time_sec, num_tetris)
         fitness_values[idx] = fitness
 
         agent_row = [
