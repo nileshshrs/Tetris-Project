@@ -22,7 +22,7 @@ POP_SIZE = 10
 N_TRAYS = 4
 TIMEOUT_SECONDS = 360
 
-misc_dir = r"D:\\Tetris-Project\\miscellaneous"
+misc_dir = r"D:\\Tetris-Project\\results\\GA"
 os.makedirs(misc_dir, exist_ok=True)
 AGENT_LOG_FILE = os.path.join(misc_dir, "agent_log.csv")
 GA_LOG_FILE = os.path.join(misc_dir, "ga_log.csv")

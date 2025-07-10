@@ -13,7 +13,7 @@ class GA:
         elite_size=2,
         log_file="ga_log.csv",
         checkpoint_file="ga_checkpoint.pkl",
-        misc_dir="D:\\Tetris-Project\\miscellaneous"
+        misc_dir="D:\\Tetris-Project\\results\\ga"
     ):
         self.population_size = population_size
         self.n_weights = n_weights
