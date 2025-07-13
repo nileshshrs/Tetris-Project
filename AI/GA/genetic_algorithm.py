@@ -53,23 +53,30 @@ class GA:
 
 
     def evaluate_agent_fitness(self, lines, score, time_sec, num_tetris, max_time=360):
-        # Core rewards
-        line_score = 0.6 * lines                 # Increased line reward
-        tetris_score = 4.5 * num_tetris          # Heavily reward tetrises (adjust as needed)
-        score_bonus = 0.03 * score              # Score helps, not dominant
+        # Reward for clearing lines
+        line_score = 1 * lines
+        # Extra reward for tetrises
+        tetris_score = 4.5 * num_tetris
+        # Score as a small reward (optional, tune as needed)
+        score_bonus = 0.015 * score
+        # Survival reward: encourages agents to survive longer
+        survival_reward = 0.09 * time_sec  # Tweak multiplier to balance with your other terms
 
-        # Mild penalty for surviving too long without action
-        time_penalty = 0.5 * time_sec          
-
-        # Death penalty for failing to reach 75% of max time
-        death_penalty = 0
-        min_survival = 0.9 * max_time           # e.g., 270 seconds if max_time=360
+        # Early death penalty: Only punishes for dying before 90% of max_time
+        min_survival = 0.9 * max_time
         if time_sec < min_survival:
-            # Log penalty—more forgiving for close calls, harsher for early deaths
             death_penalty = math.log((min_survival - time_sec) + 1) * 8
+        else:
+            death_penalty = 0
 
         # Final fitness calculation
-        fitness = line_score + tetris_score + score_bonus - time_penalty - death_penalty
+        fitness = (
+            line_score +
+            tetris_score +
+            score_bonus +
+            survival_reward -
+            death_penalty
+        )
         return fitness
 
 

@@ -18,7 +18,7 @@ class Game:
         self.display_surface = pygame.display.get_surface()
         # The next two lines are for standalone only, comment or remove in tray mode:
 
-        # self.rect = self.surface.get_rect(topleft = (PADDING+SIDEBAR_WIDTH+PADDING, PADDING))
+        self.rect = self.surface.get_rect(topleft = (PADDING+SIDEBAR_WIDTH+PADDING, PADDING))
 
         # The next two lines are for standalone only, comment or remove in tray mode:
 
@@ -254,8 +254,8 @@ class Game:
         self.draw_grid()
         # The next two lines are for standalone only, comment or remove in tray mode:
 
-        # self.display_surface.blit(self.surface, self.rect.topleft)
-        # pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)
+        self.display_surface.blit(self.surface, self.rect.topleft)
+        pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)
 
         # The next two lines are for standalone only, comment or remove in tray mode:
 
