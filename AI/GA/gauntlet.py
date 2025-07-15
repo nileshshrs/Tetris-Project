@@ -33,7 +33,7 @@ agent_weights_list = [agent_weights_dict[name] for name in agent_names]
 N_AGENTS = 4
 GAMES_PER_AGENT = 2
 TIMEOUT_SECONDS = 60  # 30 seconds per game
-misc_dir = r"D:\\Tetris-Project\\miscellaneous"
+misc_dir = r"D:\\Tetris-Project\\results\\gauntlet"
 os.makedirs(misc_dir, exist_ok=True)
 
 def run_agent(agent_name, agent_weights, num_games, timeout_sec):
