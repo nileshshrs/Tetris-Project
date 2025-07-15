@@ -30,9 +30,9 @@ agent_weights_dict = {
 agent_names = list(agent_weights_dict.keys())
 agent_weights_list = [agent_weights_dict[name] for name in agent_names]
 
-N_AGENTS = 4
-GAMES_PER_AGENT = 2
-TIMEOUT_SECONDS = 60  # 30 seconds per game
+N_AGENTS = 3
+GAMES_PER_AGENT = 20
+TIMEOUT_SECONDS = 600  # 30 seconds per game
 misc_dir = r"D:\\Tetris-Project\\results\\gauntlet"
 os.makedirs(misc_dir, exist_ok=True)
 
