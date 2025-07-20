@@ -28,7 +28,7 @@ class TetrisAI:
         self.game = game
         self.Tetrominos = tetromino_class
         self.last_action_time = 0
-        self.delay = 200
+        self.delay = 130
         self.rows = ROWS
         self.cols = COLUMNS
         # GA/Heuristic weights: [agg_height, holes, blockades, bumpiness, almost_full, fills_well, clear_4, clear_3, clear_2, clear_1]
