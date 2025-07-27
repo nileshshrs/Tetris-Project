@@ -49,7 +49,7 @@ Tetris-Project/
 ```
 ---
 
-## 🚀 How to Run
+## How to Run
 
 ### 1. **Run Tetris AI (Solo Play)**
 
