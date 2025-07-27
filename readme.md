@@ -4,7 +4,7 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 
 > **Note**: This project is AI-only. The game runs in automated mode with the AI making all decisions. Human controls exist but are overridden and not intended for manual play.
 
-## 🧠 Overview
+## Overview
 
 - **AI Type**: Heuristic-based using weighted board evaluation  
 - **Optimization**: Genetic Algorithm (selection, crossover, mutation)  
@@ -13,10 +13,10 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 - **Parallel Training**: Multi-tray evaluation using multiprocessing  
 - **Evaluation**: Based on score, lines, survival time, and average move quality  
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
-Tetris-AI/
+Tetris-Project/
 ├── AI/
 │   └── TetrisAI.py             # Core AI logic and cost evaluation
 ├── GA/
