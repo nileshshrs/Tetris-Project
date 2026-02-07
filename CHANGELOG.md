@@ -10,6 +10,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## 2026-02-07: Phase 1 Complete — I-Piece SRS Fix
+
+### Fixed
+
+- **I-Piece Rotation States** (`settings.py`)
+  - Corrected I-piece to have **4 distinct rotation states** as per official SRS specification
+  - Previously states 0/2 and 1/3 were identical (incorrect)
+  - Now each state occupies different grid positions, enabling proper wall kick behavior
+
+  | State | Before (Incorrect) | After (SRS-Compliant) |
+  |-------|-------------------|----------------------|
+  | 0 | `[(0,0), (-1,0), (1,0), (2,0)]` | `[(-1,0), (0,0), (1,0), (2,0)]` |
+  | 1 | `[(0,0), (0,-1), (0,1), (0,2)]` | `[(0,-1), (0,0), (0,1), (0,2)]` |
+  | 2 | *Same as State 0* ❌ | `[(-1,1), (0,1), (1,1), (2,1)]` |
+  | 3 | *Same as State 1* ❌ | `[(1,-1), (1,0), (1,1), (1,2)]` |
+
+### Why This Matters
+
+- **Correct wall kicks**: The SRS kick tables have different offsets for 0→1 vs 2→3 transitions
+- **Proper I-piece behavior**: Matches official Tetris Guideline games
+- **Phase 1 now complete**: All static geometry foundation requirements satisfied
+
+---
+
 ## 2026-02-07: Phase 1 — SRS Implementation
 
 ### Added

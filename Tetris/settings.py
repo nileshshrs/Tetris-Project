@@ -89,12 +89,13 @@ TETROMINOS = {
     },
     
     # I-piece: Pivot is between cells (bridge point)
+    # SRS defines 4 distinct states - each rotation shifts the piece position
     'I': {
         'rotations': [
-            [(0, 0), (-1, 0), (1, 0), (2, 0)],    # State 0: Horizontal
-            [(0, 0), (0, -1), (0, 1), (0, 2)],    # State 1: Vertical
-            [(0, 0), (-1, 0), (1, 0), (2, 0)],    # State 2: Horizontal
-            [(0, 0), (0, -1), (0, 1), (0, 2)],    # State 3: Vertical
+            [(-1, 0), (0, 0), (1, 0), (2, 0)],    # State 0: Horizontal (row 0)
+            [(0, -1), (0, 0), (0, 1), (0, 2)],    # State 1: Vertical (column 0)
+            [(-1, 1), (0, 1), (1, 1), (2, 1)],    # State 2: Horizontal (row 1)
+            [(1, -1), (1, 0), (1, 1), (1, 2)],    # State 3: Vertical (column 1)
         ],
         'color': CYAN
     },

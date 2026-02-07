@@ -123,6 +123,7 @@ For detailed information about updates, improvements, and version history, see t
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-02-07 | Phase 1 ✅ | **SRS Complete** — I-piece fixed to have 4 distinct rotation states per official SRS spec |
 | 2026-02-07 | Phase 1 | **SRS Implementation** — Static rotation tables, official wall kicks, zero runtime math |
 
 ---
