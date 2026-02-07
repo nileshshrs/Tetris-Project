@@ -262,15 +262,24 @@ class Game:
 
 class Tetrominos:
     def __init__(self, shape, group, create_new_tetromino, game_data):
-        self.block_positions = TETROMINOS[shape]['shape']
+        self.shape = shape
         self.color = TETROMINOS[shape]['color']
         self.create_new_tetromino = create_new_tetromino
         self.game_data = game_data
-        self.shape = shape
-
-        #create blocks
-        self.blocks = [Block(group, pos, self.color) for pos in self.block_positions]
-
+        self.group = group
+        
+        # Static rotation system
+        self.rotation_index = 0  # Current rotation state (0-3)
+        
+        # Pivot position (reference point for blocks)
+        self.pivot = pygame.Vector2(BLOCK_OFFSET)
+        
+        # Create blocks at initial positions (rotation state 0)
+        self.blocks = []
+        for bx, by in TETROMINOS[shape]['rotations'][0]:
+            block_pos = (self.pivot.x + bx, self.pivot.y + by)
+            self.blocks.append(Block(group, block_pos, self.color, use_offset=False))
+        
         self.create_new_tetromino_called = False
 
 
@@ -286,6 +295,7 @@ class Tetrominos:
         if not self.next_move_horizontal_collide(self.blocks, amount):
             for block in self.blocks:
                 block.pos.x += amount
+            self.pivot.x += amount  # Keep pivot in sync
             self.create_new_tetromino_called = False 
 
 
@@ -293,46 +303,54 @@ class Tetrominos:
         if not self.next_move_vertical_collide(self.blocks, 1):
             for block in self.blocks:
                 block.pos.y += 1
-            self.create_new_tetromino_called = False  # 🔄 Reset lock delay
+            self.pivot.y += 1  # Keep pivot in sync
+            self.create_new_tetromino_called = False
         else:
-            # Don't lock here — let Game handle it using lock timer
             pass
 
 
-    def rotate(self):
+    def rotate(self, clockwise=True):
+        """Rotate using static SRS tables with wall kicks."""
         if self.shape == "O":
             return  # O doesn't rotate
-
-        # 1. Choose pivot block
-        pivot = self.blocks[1].pos if self.shape == "I" else self.blocks[0].pos
-
-        # 2. Rotate all blocks around the pivot
-        new_positions = [block.rotate(pivot) for block in self.blocks]
-
-        # 3. Check for direct collision
-        if self._is_valid_position(new_positions):
-            for i, block in enumerate(self.blocks):
-                block.pos = new_positions[i]
-            self.create_new_tetromino_called = False  # 🔄 Reset lock delay
-            return
-
-        # 4. Try wall kicks
-        kick_offsets = [
-            (-1, 0), (1, 0), (-2, 0), (2, 0),
-            (0, -1), (0, 1),
-            (-1, -1), (1, -1), (-1, 1), (1, 1)
-        ]
-
+        
+        old_rot = self.rotation_index
+        new_rot = (old_rot + 1) % 4 if clockwise else (old_rot - 1) % 4
+        
+        # Get the appropriate SRS kick table
+        kicks = SRS_KICKS_I if self.shape == 'I' else SRS_KICKS_GENERAL
+        kick_offsets = kicks.get((old_rot, new_rot), [(0, 0)])
+        
+        # Get new block offsets from static table
+        new_offsets = TETROMINOS[self.shape]['rotations'][new_rot]
+        
+        # Try each kick offset
         for dx, dy in kick_offsets:
-            kicked_positions = [pygame.Vector2(pos.x + dx, pos.y + dy) for pos in new_positions]
-            if self._is_valid_position(kicked_positions):
-                for i, block in enumerate(self.blocks):
-                    block.pos = kicked_positions[i]
-                self.create_new_tetromino_called = False  # 🔄 Reset lock delay
-                return
-
-        # 5. All kicks failed — cancel rotation
-        return
+            test_pivot_x = self.pivot.x + dx
+            test_pivot_y = self.pivot.y + dy
+            
+            # Calculate test positions for all blocks
+            test_positions = []
+            for bx, by in new_offsets:
+                test_positions.append(pygame.Vector2(test_pivot_x + bx, test_pivot_y + by))
+            
+            # Check if this position is valid
+            if self._is_valid_position(test_positions):
+                # Apply the rotation and kick
+                self.pivot.x = test_pivot_x
+                self.pivot.y = test_pivot_y
+                self.rotation_index = new_rot
+                
+                # Update block positions
+                for i, (bx, by) in enumerate(new_offsets):
+                    self.blocks[i].pos.x = self.pivot.x + bx
+                    self.blocks[i].pos.y = self.pivot.y + by
+                
+                self.create_new_tetromino_called = False
+                return True
+        
+        # All kicks failed
+        return False
     
     def _is_valid_position(self, positions):
         for pos in positions:
@@ -364,27 +382,18 @@ class Tetrominos:
 
 
 class Block(pygame.sprite.Sprite):
-    def __init__(self, group, pos, color):
-
-        #general
+    def __init__(self, group, pos, color, use_offset=True):
         super().__init__(group)
         self.image = pygame.Surface((CELL_SIZE, CELL_SIZE))
         self.image.fill(color)
 
-    
+        # Position - use_offset=False for static rotation system
+        if use_offset:
+            self.pos = pygame.Vector2(pos) + BLOCK_OFFSET
+        else:
+            self.pos = pygame.Vector2(pos)
 
-        #position
-        self.pos = pygame.Vector2(pos) + BLOCK_OFFSET
-        # print(f"Block position - x: {self.pos.x}, y: {self.pos.y}")
-
-        self.rect = self.image.get_rect(topleft = self.pos * CELL_SIZE)
-
-    def rotate(self, pivot) :
-        distance = self.pos -pivot
-        rotated = distance.rotate(90)
-        new_position = pivot + rotated
-
-        return new_position
+        self.rect = self.image.get_rect(topleft=self.pos * CELL_SIZE)
 
     def horizontal_collide(self, x, game_data):
         if not 0 <= x < COLUMNS:

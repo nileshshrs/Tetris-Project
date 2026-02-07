@@ -38,15 +38,116 @@ LINE_COLOR = '#FFFFFF'
 
 colors = [YELLOW, RED, BLUE, GREEN, PURPLE, CYAN, ORANGE]
 
-# shapes
+# shapes - Static rotation tables using SRS (Super Rotation System)
+# Format: 'rotations': [state0, state1, state2, state3] where each state is 4 (x,y) tuples
+# Coordinate system: +X is right, +Y is DOWN (Pygame standard)
+# Pivot point (0,0) is consistent across all rotation states
+
 TETROMINOS = {
-    'T': {'shape': [(0,0), (-1,0), (1,0), (0,-1)], 'color': PURPLE },
-    'O': {'shape': [(0,0), (0,-1), (1,0), (1,-1)], 'color': YELLOW},
-    'J': {'shape': [(0,1), (1,1), (2,1), (2,0)], 'color': BLUE},
-    'L': {'shape': [(0,0), (1,0), (2,0), (2,1)], 'color': ORANGE},
-    'I': {'shape': [(0,0), (1,0), (2,0), (3,0)], 'color': CYAN},
-    'S': {'shape': [(0,0), (-1,0), (0,-1), (1,-1)], 'color': GREEN},
-    'Z': {'shape': [(0,0), (1,0), (0,-1), (-1,-1)], 'color': RED}
+    # T-piece: (0,0) is the center pivot block
+    'T': {
+        'rotations': [
+            [(0, 0), (-1, 0), (1, 0), (0, -1)],   # State 0: flat, pointing up
+            [(0, 0), (0, -1), (0, 1), (1, 0)],    # State 1: pointing right
+            [(0, 0), (-1, 0), (1, 0), (0, 1)],    # State 2: flat, pointing down
+            [(0, 0), (0, -1), (0, 1), (-1, 0)],   # State 3: pointing left
+        ],
+        'color': PURPLE
+    },
+    
+    # O-piece: All 4 states identical (doesn't rotate visually)
+    'O': {
+        'rotations': [
+            [(0, 0), (1, 0), (0, 1), (1, 1)],
+            [(0, 0), (1, 0), (0, 1), (1, 1)],
+            [(0, 0), (1, 0), (0, 1), (1, 1)],
+            [(0, 0), (1, 0), (0, 1), (1, 1)],
+        ],
+        'color': YELLOW
+    },
+    
+    # J-piece: (0,0) is the center pivot block
+    'J': {
+        'rotations': [
+            [(0, 0), (-1, 0), (1, 0), (-1, -1)],  # State 0
+            [(0, 0), (0, -1), (0, 1), (1, -1)],   # State 1
+            [(0, 0), (-1, 0), (1, 0), (1, 1)],    # State 2
+            [(0, 0), (0, -1), (0, 1), (-1, 1)],   # State 3
+        ],
+        'color': BLUE
+    },
+    
+    # L-piece: (0,0) is the center pivot block
+    'L': {
+        'rotations': [
+            [(0, 0), (-1, 0), (1, 0), (1, -1)],   # State 0
+            [(0, 0), (0, -1), (0, 1), (1, 1)],    # State 1
+            [(0, 0), (-1, 0), (1, 0), (-1, 1)],   # State 2
+            [(0, 0), (0, -1), (0, 1), (-1, -1)],  # State 3
+        ],
+        'color': ORANGE
+    },
+    
+    # I-piece: Pivot is between cells (bridge point)
+    'I': {
+        'rotations': [
+            [(0, 0), (-1, 0), (1, 0), (2, 0)],    # State 0: Horizontal
+            [(0, 0), (0, -1), (0, 1), (0, 2)],    # State 1: Vertical
+            [(0, 0), (-1, 0), (1, 0), (2, 0)],    # State 2: Horizontal
+            [(0, 0), (0, -1), (0, 1), (0, 2)],    # State 3: Vertical
+        ],
+        'color': CYAN
+    },
+    
+    # S-piece: (0,0) is the center pivot block
+    'S': {
+        'rotations': [
+            [(0, 0), (-1, 0), (0, -1), (1, -1)],  # State 0
+            [(0, 0), (0, -1), (1, 0), (1, 1)],    # State 1
+            [(0, 0), (-1, 1), (0, 1), (1, 0)],    # State 2
+            [(0, 0), (-1, 0), (-1, -1), (0, 1)],  # State 3
+        ],
+        'color': GREEN
+    },
+    
+    # Z-piece: (0,0) is the center pivot block
+    'Z': {
+        'rotations': [
+            [(0, 0), (1, 0), (0, -1), (-1, -1)],  # State 0
+            [(0, 0), (0, 1), (1, 0), (1, -1)],    # State 1
+            [(0, 0), (-1, 0), (0, 1), (1, 1)],    # State 2
+            [(0, 0), (0, -1), (-1, 0), (-1, 1)],  # State 3
+        ],
+        'color': RED
+    }
+}
+
+# SRS (Super Rotation System) Wall Kick Tables
+# Keys: (from_state, to_state) - rotation transition
+# Values: List of 5 (dx, dy) offset tests to try in order
+
+# General kick table for J, L, S, Z, T pieces
+SRS_KICKS_GENERAL = {
+    (0, 1): [(0, 0), (-1, 0), (-1, -1), (0, 2), (-1, 2)],
+    (1, 2): [(0, 0), (1, 0), (1, 1), (0, -2), (1, -2)],
+    (2, 3): [(0, 0), (1, 0), (1, -1), (0, 2), (1, 2)],
+    (3, 0): [(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)],
+    (1, 0): [(0, 0), (1, 0), (1, 1), (0, -2), (1, -2)],
+    (2, 1): [(0, 0), (-1, 0), (-1, -1), (0, 2), (-1, 2)],
+    (3, 2): [(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)],
+    (0, 3): [(0, 0), (1, 0), (1, -1), (0, 2), (1, 2)],
+}
+
+# Special kick table for I piece
+SRS_KICKS_I = {
+    (0, 1): [(0, 0), (-2, 0), (1, 0), (-2, 1), (1, -2)],
+    (1, 2): [(0, 0), (-1, 0), (2, 0), (-1, -2), (2, 1)],
+    (2, 3): [(0, 0), (2, 0), (-1, 0), (2, -1), (-1, 2)],
+    (3, 0): [(0, 0), (1, 0), (-2, 0), (1, 2), (-2, -1)],
+    (1, 0): [(0, 0), (2, 0), (-1, 0), (2, -1), (-1, 2)],
+    (2, 1): [(0, 0), (1, 0), (-2, 0), (1, 2), (-2, -1)],
+    (3, 2): [(0, 0), (-2, 0), (1, 0), (-2, 1), (1, -2)],
+    (0, 3): [(0, 0), (-1, 0), (2, 0), (-1, -2), (2, 1)],
 }
 
 SCORE_DATA = {1: 40, 2: 100, 3: 300, 4: 1200}

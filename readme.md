@@ -112,3 +112,19 @@ Install the required Python packages before running any scripts:
 ```bash
 pip install -r requirements.txt
 ```
+
+---
+
+## Changelog
+
+For detailed information about updates, improvements, and version history, see the **[CHANGELOG.md](CHANGELOG.md)**.
+
+### Recent Updates
+
+| Date | Version | Description |
+|------|---------|-------------|
+| 2026-02-07 | Phase 1 | **SRS Implementation** — Static rotation tables, official wall kicks, zero runtime math |
+
+---
+
+*For the complete changelog with technical details, benefits, and code examples, visit [CHANGELOG.md](CHANGELOG.md).*
