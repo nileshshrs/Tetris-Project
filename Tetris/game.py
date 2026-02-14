@@ -227,7 +227,6 @@ class Game:
 
         # Update surviving sprite positions:
         # Each block drops by the number of cleared rows that were below it.
-        delete_set = set(delete_rows)
         for block in self.sprites:
             rows_below = sum(1 for dr in delete_rows if dr > int(block.pos.y))
             block.pos.y += rows_below
