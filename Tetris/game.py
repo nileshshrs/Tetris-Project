@@ -1,15 +1,16 @@
 from settings import *
 from timers import Timer
+from core import TetrisCore
 
 #ai part
 import sys
 import os
 sys.path.append(os.path.abspath('.'))
-# from AI.TetrisAI import TetrisAI 
+from AI.TetrisAI import TetrisAI 
 #ai part
 
 #GA part
-from AI.GA.tetris_ai import TetrisAI
+# from AI.GA.tetris_ai import TetrisAI
 #GA part
 
 class Game: 
@@ -45,6 +46,8 @@ class Game:
         self.num_tetris = 0
 
         self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
+        # Phase 2: Integer mirror grid for headless logic validation
+        self.core_grid = TetrisCore.create_grid()
         self.tetromino = Tetrominos(
             get_next_tetromino(self.current_bag), 
             self.sprites, 
@@ -102,6 +105,7 @@ class Game:
                 x, y = int(block.pos.x), int(block.pos.y)
                 if 0 <= x < COLUMNS and 0 <= y < ROWS:
                     self.game_data[y][x] = 0
+                    self.core_grid[y][x] = 0  # Phase 2: sync core grid
                 block.kill()
 
             self.tetromino = Tetrominos(
@@ -121,6 +125,7 @@ class Game:
             x, y = int(block.pos.x), int(block.pos.y)
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
+                self.core_grid[y][x] = 1  # Phase 2: sync core grid
         self.create_new_tetromino()
         self.timerss['vertical move'].set_interval(self.drop_speed)
 
@@ -135,11 +140,29 @@ class Game:
             self.create_new_tetromino,
             self.game_data
         )
+
+        # Sprite-based game-over check
+        sprite_game_over = False
         for block in temp_tetromino.blocks:
             x, y = int(block.pos.x), int(block.pos.y)
             if y >= 0 and self.game_data[y][x]:
-                self.is_game_over = True
-                return
+                sprite_game_over = True
+                break
+
+        # Phase 2: Shadow validate game-over against core engine
+        core_game_over = TetrisCore.is_game_over(
+            self.core_grid, new_shape, 0,
+            int(BLOCK_OFFSET.x), int(BLOCK_OFFSET.y)
+        )
+        if sprite_game_over != core_game_over:
+            print(
+                f"\u26a0\ufe0f GAME-OVER MISMATCH: sprite={sprite_game_over} core={core_game_over} "
+                f"shape={new_shape} spawn=({int(BLOCK_OFFSET.x)},{int(BLOCK_OFFSET.y)})"
+            )
+
+        if sprite_game_over:
+            self.is_game_over = True
+            return
         self.tetromino = temp_tetromino
 
     def timers_update(self):
@@ -183,7 +206,10 @@ class Game:
 
             if not self.timerss['rotate'].active:
                 if keys[pygame.K_UP]:
-                    self.tetromino.rotate()
+                    self.tetromino.rotate(clockwise=True)
+                    self.timerss["rotate"].activate()
+                elif keys[pygame.K_z]:
+                    self.tetromino.rotate(clockwise=False)
                     self.timerss["rotate"].activate()
             if keys[pygame.K_c] and not self.is_held:
                 self.hold_piece()
@@ -192,23 +218,30 @@ class Game:
         delete_rows = [i for i, row in enumerate(self.game_data) if all(row)]
         if not delete_rows:
             return
+
+        # Kill sprites in deleted rows
         for row_idx in delete_rows:
             for block in self.game_data[row_idx]:
                 if block:
                     block.kill()
-        for row_idx in sorted(delete_rows):
-            for y in range(row_idx - 1, -1, -1):
-                for x in range(COLUMNS):
-                    block = self.game_data[y][x]
-                    if block:
-                        block.pos.y += 1
-                        self.game_data[y + 1][x] = block
-                        self.game_data[y][x] = 0
+
+        # Update surviving sprite positions:
+        # Each block drops by the number of cleared rows that were below it.
+        delete_set = set(delete_rows)
+        for block in self.sprites:
+            rows_below = sum(1 for dr in delete_rows if dr > int(block.pos.y))
+            block.pos.y += rows_below
+
+        # Rebuild game_data from surviving sprites
         self.game_data = [[0 for _ in range(COLUMNS)] for _ in range(ROWS)]
         for block in self.sprites:
             x, y = int(block.pos.x), int(block.pos.y)
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
+
+        # Phase 2: sync core grid from sprites after line clear
+        self.core_grid = TetrisCore.grid_from_game_data(self.game_data)
+
         lines = len(delete_rows)
         if lines == 1:
             self.num_1line += 1
@@ -225,6 +258,7 @@ class Game:
             x, y = int(block.pos.x), int(block.pos.y)
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
+                self.core_grid[y][x] = 1  # Phase 2: sync core grid
         self.create_new_tetromino()
         self.lock_timer_active = False
 
@@ -236,7 +270,48 @@ class Game:
         self.ai.update(next_shape=self.current_next_shape)
         self.timers_update()
         self.sprites.update()
-        if self.tetromino.next_move_vertical_collide(self.tetromino.blocks, 1):
+
+        # --- Collision detection (sprite-based) ---
+        old_collide = self.tetromino.next_move_vertical_collide(self.tetromino.blocks, 1)
+
+        # --- Phase 2: Shadow validation against core engine ---
+        px, py = int(self.tetromino.pivot.x), int(self.tetromino.pivot.y)
+        shape = self.tetromino.shape
+        rot = self.tetromino.rotation_index
+
+        # Vertical collision shadow check
+        core_collide = not TetrisCore.is_valid_pos(
+            self.core_grid, shape, rot, px, py + 1
+        )
+        if old_collide != core_collide:
+            print(
+                f"\u26a0\ufe0f V-COLLISION MISMATCH: sprite={old_collide} core={core_collide} "
+                f"shape={shape} rot={rot} pivot=({px},{py})"
+            )
+
+        # Horizontal collision shadow check (left)
+        old_h_left = self.tetromino.next_move_horizontal_collide(self.tetromino.blocks, -1)
+        core_h_left = not TetrisCore.is_valid_pos(
+            self.core_grid, shape, rot, px - 1, py
+        )
+        if old_h_left != core_h_left:
+            print(
+                f"\u26a0\ufe0f H-LEFT MISMATCH: sprite={old_h_left} core={core_h_left} "
+                f"shape={shape} rot={rot} pivot=({px},{py})"
+            )
+
+        # Horizontal collision shadow check (right)
+        old_h_right = self.tetromino.next_move_horizontal_collide(self.tetromino.blocks, 1)
+        core_h_right = not TetrisCore.is_valid_pos(
+            self.core_grid, shape, rot, px + 1, py
+        )
+        if old_h_right != core_h_right:
+            print(
+                f"\u26a0\ufe0f H-RIGHT MISMATCH: sprite={old_h_right} core={core_h_right} "
+                f"shape={shape} rot={rot} pivot=({px},{py})"
+            )
+
+        if old_collide:
             if not self.lock_timer_active:
                 self.timerss['lock delay'].activate()
                 self.lock_timer_active = True
@@ -329,10 +404,10 @@ class Tetrominos:
             test_pivot_x = self.pivot.x + dx
             test_pivot_y = self.pivot.y + dy
             
-            # Calculate test positions for all blocks
+            # Calculate test positions for all blocks (plain tuples, no Vector2)
             test_positions = []
             for bx, by in new_offsets:
-                test_positions.append(pygame.Vector2(test_pivot_x + bx, test_pivot_y + by))
+                test_positions.append((test_pivot_x + bx, test_pivot_y + by))
             
             # Check if this position is valid
             if self._is_valid_position(test_positions):
@@ -354,7 +429,7 @@ class Tetrominos:
     
     def _is_valid_position(self, positions):
         for pos in positions:
-            x, y = int(pos.x), int(pos.y)
+            x, y = int(pos[0]), int(pos[1])
             if x < 0 or x >= COLUMNS or y >= ROWS:
                 return False
             if y >= 0 and self.game_data[y][x]:  # Ignore off-screen negative y
@@ -364,20 +439,18 @@ class Tetrominos:
 
                 
     def get_ghost_positions(self):
-        # Copy positions of all blocks
-        ghost_blocks = [block.pos.copy() for block in self.blocks]
-
-        while True:
-            # Check if moving down would cause collision
-            if any(
-                b.y + 1 >= ROWS or self.game_data[int(b.y + 1)][int(b.x)]
-                for b in ghost_blocks
-            ):
-                break  # landed
-            for b in ghost_blocks:
-                b.y += 1  # drop all ghost blocks by one
-
-        return ghost_blocks
+        """Calculate ghost piece landing positions using TetrisCore."""
+        px = int(self.pivot.x)
+        py = int(self.pivot.y)
+        drop_y = TetrisCore.hard_drop_y(
+            self.game_data,  # Use game_data (Block objects are truthy)
+            self.shape, self.rotation_index, px, py
+        )
+        cells = TetrisCore.get_piece_cells(
+            self.shape, self.rotation_index, px, drop_y
+        )
+        # Return as Vector2 list for compatibility with existing drawing code
+        return [pygame.Vector2(x, y) for x, y in cells]
 
 
 
@@ -398,7 +471,10 @@ class Block(pygame.sprite.Sprite):
     def horizontal_collide(self, x, game_data):
         if not 0 <= x < COLUMNS:
             return True
-        return bool(game_data[int(self.pos.y)][x])
+        y = int(self.pos.y)
+        if y < 0:
+            return False  # Above playfield — no collision possible
+        return bool(game_data[y][x])
 
     def vertical_collide(self, y, game_data):
         if y >= ROWS:

@@ -123,8 +123,10 @@ For detailed information about updates, improvements, and version history, see t
 
 | Date | Version | Description |
 |------|---------|-------------|
-| 2026-02-07 | Phase 1 ✅ | **SRS Complete** — I-piece fixed to have 4 distinct rotation states per official SRS spec |
 | 2026-02-07 | Phase 1 | **SRS Implementation** — Static rotation tables, official wall kicks, zero runtime math |
+| 2026-02-07 | Phase 1 ✅ | **SRS Complete** — I-piece fixed to have 4 distinct rotation states per official SRS spec |
+| 2026-02-14 | Phase 1 Polish | **AI 4-rotation fix**, CCW rotation keybinding, tuple-based rotation, dead code cleanup |
+| 2026-02-14 | Phase 2 ✅ | **Atomic Logic Core** — `core.py` headless engine, shadow validation, zero collision mismatches |
 
 ---
 
