@@ -61,6 +61,8 @@ class TetrisAI:
         shape = getattr(original, "shape", None)
         if shape == "O":
             max_rotations = 1
+        elif shape in ("I", "S", "Z"):
+            max_rotations = 2
         else:
             max_rotations = 4
 
@@ -166,6 +168,8 @@ class TetrisAI:
         shape = getattr(next_piece, "shape", None)
         if shape == "O":
             max_rotations = 1
+        elif shape in ("I", "S", "Z"):
+            max_rotations = 2
         else:
             max_rotations = 4
 
