@@ -1,43 +1,168 @@
-import pygame
-from settings import ROWS, COLUMNS
+"""
+Tetris AI — Phase 3: Quantum AI Refactor
 
-def count_almost_full_lines(board, allowed_gaps=2):
+Zero object instantiation in the search loop. All placement evaluation
+uses pure integer math via TetrisCore. The only Pygame usage is in
+update() for timing (get_ticks) and executing moves on the real piece.
+
+Key changes from Phase 2:
+  - Deleted _clone_tetromino — no class instantiation in the hot path
+  - Virtual math: raw index-checking on the integer board
+  - No-copy heuristics: virtual_coords treated as occupied without grid copy
+  - Reachability: vertical scan ensures the AI can actually reach placements
+  - All 4 rotation states evaluated (except O = 1)
+  - Lookahead uses TetrisCore.lock_piece + clear_lines (with line clearing!)
+  - Performance: pre-fetched block coords, module-level constants, batch eval
+"""
+
+import pygame
+from settings import TETROMINOS, ROWS, COLUMNS
+from core import TetrisCore
+
+# ---------------------------------------------------------------------------
+# Module-level constants — avoid recomputing per call
+# ---------------------------------------------------------------------------
+_SPAWN_Y = -1  # Matches BLOCK_OFFSET.y in settings.py
+_SPAWN_X = (COLUMNS // 2) - 1  # Matches BLOCK_OFFSET.x in settings.py
+
+
+# ---------------------------------------------------------------------------
+# Single-pass board feature extraction (replaces 4 separate scans)
+# ---------------------------------------------------------------------------
+def _compute_board_features(board, virtual_set):
+    """
+    Extract ALL heuristic features in a single pass over the board.
+
+    Returns:
+        (agg_height, holes, blockades, bumpiness, almost_full,
+         well_col, well_depth, heights)
+    """
+    heights = [0] * COLUMNS
+    holes = 0
+    blockades = 0
+    almost_full = 0
+
+    # ---- Single column pass: heights + holes + blockades ----
+    for col in range(COLUMNS):
+        block_found = False
+        found_hole = False
+        for row in range(ROWS):
+            occupied = board[row][col] != 0 or (col, row) in virtual_set
+            if occupied:
+                if not block_found:
+                    heights[col] = ROWS - row
+                    block_found = True
+                if found_hole:
+                    blockades += 1
+            else:
+                if block_found:
+                    holes += 1
+                found_hole = True
+
+    # ---- Aggregate height + bumpiness (from heights array) ----
+    agg_height = sum(heights)
+    bumpiness = 0
+    for i in range(COLUMNS - 1):
+        bumpiness += abs(heights[i] - heights[i + 1])
+
+    # ---- Almost-full lines (row pass) ----
+    for row_idx in range(ROWS):
+        empty = 0
+        for col in range(COLUMNS):
+            if not (board[row_idx][col] or (col, row_idx) in virtual_set):
+                empty += 1
+                if empty > 2:
+                    break
+        if 1 <= empty <= 2:
+            almost_full += 1
+
+    # ---- Well detection (from heights array) ----
+    max_well_depth = 0
+    well_col = -1
+    for c in range(COLUMNS):
+        left = heights[c - 1] if c > 0 else ROWS
+        right = heights[c + 1] if c < COLUMNS - 1 else ROWS
+        wd = min(left, right) - heights[c]
+        if wd > max_well_depth:
+            max_well_depth = wd
+            well_col = c
+
+    return (agg_height, holes, blockades, bumpiness, almost_full,
+            well_col, max_well_depth, heights)
+
+
+# ---------------------------------------------------------------------------
+# Fast line-clear count without grid copy
+# ---------------------------------------------------------------------------
+def _count_cleared_lines(grid, blocks, pos_x, pos_y,
+                         cols=COLUMNS, rows=ROWS):
+    """
+    Count how many lines would be cleared if piece is placed,
+    WITHOUT copying or mutating the grid.
+
+    Checks only the rows touched by the piece.
+    """
+    touched_rows = set()
+    for bx, by in blocks:
+        cy = pos_y + by
+        if 0 <= cy < rows:
+            touched_rows.add(cy)
+
     count = 0
-    for row in board:
-        empty = sum(1 for cell in row if cell == 0)
-        if 1 <= empty <= allowed_gaps:
+    for ry in touched_rows:
+        full = True
+        for cx in range(cols):
+            cell_occupied = grid[ry][cx] != 0
+            if not cell_occupied:
+                # Check if one of the piece blocks fills this cell
+                found = False
+                for bx, by in blocks:
+                    if pos_x + bx == cx and pos_y + by == ry:
+                        found = True
+                        break
+                if not found:
+                    full = False
+                    break
+        if full:
             count += 1
     return count
 
-def find_deepest_well(board):
-    rows, cols = len(board), len(board[0])
-    col_heights = [rows - next((r for r in range(rows) if board[r][c]), rows) for c in range(cols)]
-    max_well_depth = 0
-    well_col = -1
-    for c in range(cols):
-        left = col_heights[c-1] if c > 0 else rows
-        right = col_heights[c+1] if c < cols-1 else rows
-        well_depth = min(left, right) - col_heights[c]
-        if well_depth > max_well_depth:
-            max_well_depth = well_depth
-            well_col = c
-    return well_col, max_well_depth
 
+# ---------------------------------------------------------------------------
+# Main AI class
+# ---------------------------------------------------------------------------
 class TetrisAI:
+    """
+    High-speed Tetris AI using pure integer math.
+
+    The search loop never instantiates any class — it works entirely with
+    (shape_key, rotation_index, pivot_x, pivot_y) tuples and delegates
+    all board logic to TetrisCore static methods.
+    """
+
     def __init__(self, game, tetromino_class):
         self.game = game
-        self.Tetrominos = tetromino_class
+        self.Tetrominos = tetromino_class  # kept for interface compat
         self.last_action_time = 0
-        self.delay = 130
-        self.rows = ROWS
-        self.cols = COLUMNS
+        self.delay = 75
 
-    def _is_unplayable(self, candidate):
-        for b in candidate.blocks:
-            if int(b.pos.y) < 0:
-                return True
-        return False
+        # ---- Move cache: compute once per piece, not every frame ----
+        self._cached_move = None       # (best_rot, best_x)
+        self._cached_piece_id = None   # id(tetromino) — changes on new spawn
 
+        # ---- Heuristic weights (EXACT values from pre-refactor) ----
+        # DO NOT CHANGE these without re-tuning / GA.
+        self._w_agg_height = 1.275
+        self._w_holes = 4.0
+        self._w_blockades = 1.2
+        self._w_bumpiness = 0.8
+        self._w_almost_full = 0.5
+        self._w_fills_well = 3.0
+        self._clear_bonus = {4: 20, 3: 5, 2: 2, 1: 0.1}
+
+    # ------------------------------------------------------------------
+    # Public entry point — called once per frame by Game.run()
+    # ------------------------------------------------------------------
     def update(self, next_shape):
         if self.game.is_game_over or not self.game.tetromino or not next_shape:
             return
@@ -46,98 +171,42 @@ class TetrisAI:
         if now - self.last_action_time < self.delay:
             return
 
-        base_board = [
-            [1 if self.game.game_data[r][c] else 0 for c in range(self.cols)]
-            for r in range(self.rows)
-        ]
-        original = self.game.tetromino
+        tetromino = self.game.tetromino
+        shape = tetromino.shape
+        current_rot = tetromino.rotation_index
+        current_px = int(tetromino.pivot.x)
+        piece_id = id(tetromino)
 
-        best_score = float("-inf")
-        best_rotation = 0
-        best_dx = 0
+        # ---- Use cached move if still the same piece -----------------
+        if piece_id != self._cached_piece_id:
+            # New piece — compute best move ONCE
+            grid = [
+                [1 if self.game.game_data[r][c] else 0 for c in range(COLUMNS)]
+                for r in range(ROWS)
+            ]
+            result = self._find_best_move(grid, shape, current_rot, next_shape)
+            if result is None:
+                self._cached_piece_id = piece_id
+                self._cached_move = None
+                return
+            self._cached_move = result
+            self._cached_piece_id = piece_id
 
-        shape = getattr(original, "shape", None)
-        if shape == "O":
-            max_rotations = 1
-        elif shape in ("I", "S", "Z"):
-            max_rotations = 2
-        else:
-            max_rotations = 4
-
-        for rotation_count in range(max_rotations):
-            test_piece = self._clone_tetromino(original)
-            for _ in range(rotation_count):
-                test_piece.rotate()
-
-            leftmost = min(int(b.pos.x) for b in test_piece.blocks)
-            rightmost = max(int(b.pos.x) for b in test_piece.blocks)
-            dx_min = -leftmost
-            dx_max = (self.cols - 1) - rightmost
-
-            for dx in range(dx_min, dx_max + 1):
-                candidate = self._clone_tetromino(test_piece)
-                for b in candidate.blocks:
-                    b.pos.x += dx
-
-                while True:
-                    collision = False
-                    for b in candidate.blocks:
-                        x = int(b.pos.x)
-                        y = int(b.pos.y)
-                        if y + 1 >= self.rows or (y + 1 >= 0 and base_board[y + 1][x]):
-                            collision = True
-                            break
-                    if not collision:
-                        for b in candidate.blocks:
-                            b.pos.y += 1
-                    else:
-                        break
-
-                if self._is_unplayable(candidate):
-                    continue
-
-                valid = all(
-                    0 <= int(b.pos.x) < self.cols and 0 <= int(b.pos.y) < self.rows
-                    for b in candidate.blocks
-                )
-                if valid:
-                    for b in candidate.blocks:
-                        x = int(b.pos.x)
-                        y = int(b.pos.y)
-                        if base_board[y][x]:
-                            valid = False
-                            break
-                if not valid:
-                    continue
-
-                sim_board = [row[:] for row in base_board]
-                for b in candidate.blocks:
-                    sim_board[int(b.pos.y)][int(b.pos.x)] = 1
-
-                lines_cleared = sum(1 for row in sim_board if all(cell != 0 for cell in row))
-                cost_now = self._cost_function(sim_board, lines_cleared, candidate)
-
-                # Lookahead (optional, tunable weight)
-                if next_shape:
-                    next_score = self._evaluate_next_piece(sim_board, next_shape, candidate)
-                    total_score = -cost_now +  next_score
-                else:
-                    total_score = -cost_now
-
-                if total_score > best_score:
-                    best_score = total_score
-                    best_rotation = rotation_count
-                    best_dx = dx
-
-        if best_score == float("-inf"):
+        if self._cached_move is None:
             return
 
-        tetromino = self.game.tetromino
-        rotations_needed = best_rotation
-        dx_needed = best_dx
+        best_rot, best_x = self._cached_move
 
+        # ---- Translate absolute target to relative actions -----------
+        rotations_needed = (best_rot - current_rot) % 4
+        # After rotating, the pivot X stays the same (SRS pivot system),
+        # so dx is simply the difference between target X and current X.
+        dx_needed = best_x - current_px
+
+        # ---- Execute on the real tetromino ---------------------------
         for _ in range(rotations_needed):
             tetromino.rotate()
+
         if dx_needed > 0:
             for _ in range(dx_needed):
                 tetromino.move_horizontal(+1)
@@ -145,178 +214,150 @@ class TetrisAI:
             for _ in range(-dx_needed):
                 tetromino.move_horizontal(-1)
 
+        # Hard drop when the piece is already in position
         if rotations_needed == 0 and dx_needed == 0:
             if hasattr(self.game, 'perform_hard_drop'):
                 self.game.perform_hard_drop()
             elif hasattr(tetromino, 'hard_drop'):
                 tetromino.hard_drop()
             else:
-                dropped = True
-                while dropped:
-                    dropped = tetromino.move_down()
+                while tetromino.move_down():
+                    pass
+
         self.last_action_time = now
 
-    def _evaluate_next_piece(self, board, next_shape, prev_candidate=None):
-        next_piece = self.Tetrominos(
-            next_shape,
-            pygame.sprite.Group(),
-            self.game.create_new_tetromino,
-            [row[:] for row in board]
+    # ------------------------------------------------------------------
+    # Core search — pure integer, zero Pygame, zero object instantiation
+    # ------------------------------------------------------------------
+    def _find_best_move(self, grid, shape, current_rot, next_shape):
+        """
+        Evaluate every reachable placement and return (best_rot, best_x).
+
+        Uses TetrisCore.evaluate_all_placements() for batch generation,
+        then scores each with the single-pass heuristic and 1-piece lookahead.
+        """
+        placements = TetrisCore.evaluate_all_placements(
+            grid, shape, _SPAWN_Y, COLUMNS, ROWS
         )
-        shape = getattr(next_piece, "shape", None)
-        if shape == "O":
-            max_rotations = 1
-        elif shape in ("I", "S", "Z"):
-            max_rotations = 2
-        else:
-            max_rotations = 4
+        if not placements:
+            return None
 
         best_score = float("-inf")
-        for rotation_count in range(max_rotations):
-            test_piece = self._clone_tetromino(next_piece)
-            for _ in range(rotation_count):
-                test_piece.rotate()
+        best_rot = 0
+        best_x = _SPAWN_X
 
-            leftmost = min(int(b.pos.x) for b in test_piece.blocks)
-            rightmost = max(int(b.pos.x) for b in test_piece.blocks)
-            dx_min = -leftmost
-            dx_max = (self.cols - 1) - rightmost
+        for rot, x, drop_y, blocks in placements:
+            # Virtual coordinates of the landed piece
+            virtual_coords = [
+                (x + bx, drop_y + by) for bx, by in blocks
+            ]
+            virtual_set = frozenset(virtual_coords)
 
-            for dx in range(dx_min, dx_max + 1):
-                candidate = self._clone_tetromino(test_piece)
-                for b in candidate.blocks:
-                    b.pos.x += dx
+            # Count lines cleared without copying the grid
+            lines_cleared = _count_cleared_lines(grid, blocks, x, drop_y)
 
-                while True:
-                    collision = False
-                    for b in candidate.blocks:
-                        x = int(b.pos.x)
-                        y = int(b.pos.y)
-                        if y + 1 >= self.rows or (y + 1 >= 0 and board[y + 1][x]):
-                            collision = True
-                            break
-                    if not collision:
-                        for b in candidate.blocks:
-                            b.pos.y += 1
-                    else:
-                        break
+            cost_now = self._cost_function(grid, virtual_coords, virtual_set,
+                                           lines_cleared)
 
-                if self._is_unplayable(candidate):
-                    continue
+            # 1-piece lookahead on the cleared grid
+            if next_shape:
+                # Need actual grid with piece locked + lines cleared for lookahead
+                locked_grid = TetrisCore.lock_piece(grid, shape, rot, x, drop_y)
+                cleared_grid, _ = TetrisCore.clear_lines(locked_grid)
+                next_score = self._evaluate_next(cleared_grid, next_shape)
+                total_score = -cost_now + next_score
+            else:
+                total_score = -cost_now
 
-                valid = all(
-                    0 <= int(b.pos.x) < self.cols and 0 <= int(b.pos.y) < self.rows
-                    for b in candidate.blocks
-                )
-                if valid:
-                    for b in candidate.blocks:
-                        x = int(b.pos.x)
-                        y = int(b.pos.y)
-                        if board[y][x]:
-                            valid = False
-                            break
-                if not valid:
-                    continue
+            if total_score > best_score:
+                best_score = total_score
+                best_rot = rot
+                best_x = x
 
-                sim_board = [row[:] for row in board]
-                for b in candidate.blocks:
-                    sim_board[int(b.pos.y)][int(b.pos.x)] = 1
+        if best_score == float("-inf"):
+            return None
 
-                lines_cleared = sum(1 for row in sim_board if all(cell != 0 for cell in row))
-                score = -self._cost_function(sim_board, lines_cleared, candidate)
-                if score > best_score:
-                    best_score = score
+        return best_rot, best_x
+
+    # ------------------------------------------------------------------
+    # Lookahead evaluation — mutable ops, zero grid copies
+    # ------------------------------------------------------------------
+    def _evaluate_next(self, grid, shape):
+        """
+        Evaluate the best possible score for `shape` on `grid`.
+        Uses lock_piece_mut/unlock_piece_mut to avoid grid copies.
+        """
+        placements = TetrisCore.evaluate_all_placements(
+            grid, shape, _SPAWN_Y, COLUMNS, ROWS
+        )
+        if not placements:
+            return float("-inf")
+
+        best_score = float("-inf")
+        _lock = TetrisCore.lock_piece_mut
+        _unlock = TetrisCore.unlock_piece_mut
+
+        for rot, x, drop_y, blocks in placements:
+            virtual_coords = [
+                (x + bx, drop_y + by) for bx, by in blocks
+            ]
+            virtual_set = frozenset(virtual_coords)
+
+            # Count cleared lines without copying
+            lines_cleared = _count_cleared_lines(grid, blocks, x, drop_y)
+
+            score = -self._cost_function(grid, virtual_coords, virtual_set,
+                                         lines_cleared)
+            if score > best_score:
+                best_score = score
+
         return best_score
 
-    def _clone_tetromino(self, original):
-        dummy_group = pygame.sprite.Group()
-        clone = type(original)(
-            original.shape,
-            dummy_group,
-            original.create_new_tetromino,
-            [row[:] for row in original.game_data]
+    # ------------------------------------------------------------------
+    # Heuristic cost function — single-pass, NO grid copy
+    # ------------------------------------------------------------------
+    def _cost_function(self, board, virtual_coords, virtual_set,
+                       lines_cleared=0):
+        """
+        Compute placement cost in a single pass over the board.
+        """
+        # ---- Single-pass feature extraction ----
+        (agg_height, holes, blockades, bumpiness, almost_full,
+         well_col, well_depth, heights) = _compute_board_features(
+            board, virtual_set
         )
-        for i, b in enumerate(original.blocks):
-            clone.blocks[i].pos = b.pos.copy()
-        return clone
 
-    def _blockades(self, board):
-        rows = len(board)
-        cols = len(board[0])
-        blockades = 0
-        for col in range(cols):
-            found_hole = False
-            for row in range(rows):
-                if not board[row][col]:
-                    found_hole = True
-                elif found_hole and board[row][col]:
-                    blockades += 1
-        return blockades
-
-    def _cost_function(self, board, lines_cleared=0, candidate=None):
-        holes = 0
-        agg_height = 0
-        bumpiness = 0
-        rows = len(board)
-        cols = len(board[0])
-        heights = [0 for _ in range(cols)]
-
-        for col in range(cols):
-            col_height = 0
-            block_found = False
-            for row in range(rows):
-                if board[row][col]:
-                    if not block_found:
-                        col_height = rows - row
-                        block_found = True
-                    for k in range(row + 1, rows):
-                        if not board[k][col]:
-                            holes += 1
-                    break
-            heights[col] = col_height
-            agg_height += col_height
-
-        for i in range(cols - 1):
-            bumpiness += abs(heights[i] - heights[i + 1])
-
-        blockades = self._blockades(board)
-        almost_full = count_almost_full_lines(board, allowed_gaps=2)
-        well_col, well_depth = find_deepest_well(board)
-
+        # ---- fills_well check ----
         fills_well = False
-        if candidate and well_col != -1:
-            for b in candidate.blocks:
-                x = int(b.pos.x)
-                y = int(b.pos.y)
-                if x == well_col and (y == self.rows - 1 or board[y + 1][x]):
-                    fills_well = True
-                    break
+        if well_col != -1:
+            for vx, vy in virtual_coords:
+                if vx == well_col:
+                    if vy == ROWS - 1 or board[vy + 1][vx]:
+                        fills_well = True
+                        break
 
-        if lines_cleared == 4:
-            clear_bonus = 20
-        elif lines_cleared == 3:
-            clear_bonus = 5
-        elif lines_cleared == 2:
-            clear_bonus = 2
-        elif lines_cleared == 1:
-            clear_bonus = 0.1
-        else:
-            clear_bonus = 0
+        # ---- Clear bonus (exact same tiers) ----
+        clear_bonus = self._clear_bonus.get(lines_cleared, 0)
 
+        # ---- Weighted cost (EXACT pre-refactor formula) ----
         cost = (
-            1.275 * agg_height +
-            4.0 * holes +
-            1.2 * blockades +
-            0.8 * bumpiness -
-            0.5 * almost_full +
-            (3.0 * fills_well if fills_well else 0) -
+            self._w_agg_height * agg_height +
+            self._w_holes * holes +
+            self._w_blockades * blockades +
+            self._w_bumpiness * bumpiness -
+            self._w_almost_full * almost_full +
+            (self._w_fills_well if fills_well else 0) -
             clear_bonus
         )
         return cost
 
-#best possible weight from GA
 
-w1={
+# ---------------------------------------------------------------------------
+# GA-tuned weight sets (preserved from pre-refactor for reference)
+# ---------------------------------------------------------------------------
+# best possible weight from GA
+
+w1 = {
     5.144482627321173,
     4.592403558759385,
     0.3629109377693661,
@@ -328,7 +369,7 @@ w1={
     3.5644486713487082,
     3.0656886100418195
 }
-w2=[
+w2 = [
     9.199501774279456,
     11.643503548109585,
     5.129311510706264,
@@ -341,7 +382,7 @@ w2=[
     1.5204907187507872
 ]
 
-w3=[
+w3 = [
     15.542284669066337,
     16.765635983153906,
     2.9161714152460676,

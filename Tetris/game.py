@@ -105,7 +105,6 @@ class Game:
                 x, y = int(block.pos.x), int(block.pos.y)
                 if 0 <= x < COLUMNS and 0 <= y < ROWS:
                     self.game_data[y][x] = 0
-                    self.core_grid[y][x] = 0  # Phase 2: sync core grid
                 block.kill()
 
             self.tetromino = Tetrominos(
@@ -125,7 +124,6 @@ class Game:
             x, y = int(block.pos.x), int(block.pos.y)
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
-                self.core_grid[y][x] = 1  # Phase 2: sync core grid
         self.create_new_tetromino()
         self.timerss['vertical move'].set_interval(self.drop_speed)
 
@@ -141,28 +139,12 @@ class Game:
             self.game_data
         )
 
-        # Sprite-based game-over check
-        sprite_game_over = False
+        # Game-over check
         for block in temp_tetromino.blocks:
             x, y = int(block.pos.x), int(block.pos.y)
             if y >= 0 and self.game_data[y][x]:
-                sprite_game_over = True
-                break
-
-        # Phase 2: Shadow validate game-over against core engine
-        core_game_over = TetrisCore.is_game_over(
-            self.core_grid, new_shape, 0,
-            int(BLOCK_OFFSET.x), int(BLOCK_OFFSET.y)
-        )
-        if sprite_game_over != core_game_over:
-            print(
-                f"\u26a0\ufe0f GAME-OVER MISMATCH: sprite={sprite_game_over} core={core_game_over} "
-                f"shape={new_shape} spawn=({int(BLOCK_OFFSET.x)},{int(BLOCK_OFFSET.y)})"
-            )
-
-        if sprite_game_over:
-            self.is_game_over = True
-            return
+                self.is_game_over = True
+                return
         self.tetromino = temp_tetromino
 
     def timers_update(self):
@@ -238,8 +220,7 @@ class Game:
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
 
-        # Phase 2: sync core grid from sprites after line clear
-        self.core_grid = TetrisCore.grid_from_game_data(self.game_data)
+        self._sync_core_grid()
 
         lines = len(delete_rows)
         if lines == 1:
@@ -257,9 +238,12 @@ class Game:
             x, y = int(block.pos.x), int(block.pos.y)
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
-                self.core_grid[y][x] = 1  # Phase 2: sync core grid
         self.create_new_tetromino()
         self.lock_timer_active = False
+
+    def _sync_core_grid(self):
+        """Rebuild core_grid from game_data — single source of truth."""
+        self.core_grid = TetrisCore.grid_from_game_data(self.game_data)
 
     def run(self):
         if self.is_game_over:
@@ -270,47 +254,10 @@ class Game:
         self.timers_update()
         self.sprites.update()
 
-        # --- Collision detection (sprite-based) ---
-        old_collide = self.tetromino.next_move_vertical_collide(self.tetromino.blocks, 1)
+        # --- Collision detection ---
+        collide = self.tetromino.next_move_vertical_collide(self.tetromino.blocks, 1)
 
-        # --- Phase 2: Shadow validation against core engine ---
-        px, py = int(self.tetromino.pivot.x), int(self.tetromino.pivot.y)
-        shape = self.tetromino.shape
-        rot = self.tetromino.rotation_index
-
-        # Vertical collision shadow check
-        core_collide = not TetrisCore.is_valid_pos(
-            self.core_grid, shape, rot, px, py + 1
-        )
-        if old_collide != core_collide:
-            print(
-                f"\u26a0\ufe0f V-COLLISION MISMATCH: sprite={old_collide} core={core_collide} "
-                f"shape={shape} rot={rot} pivot=({px},{py})"
-            )
-
-        # Horizontal collision shadow check (left)
-        old_h_left = self.tetromino.next_move_horizontal_collide(self.tetromino.blocks, -1)
-        core_h_left = not TetrisCore.is_valid_pos(
-            self.core_grid, shape, rot, px - 1, py
-        )
-        if old_h_left != core_h_left:
-            print(
-                f"\u26a0\ufe0f H-LEFT MISMATCH: sprite={old_h_left} core={core_h_left} "
-                f"shape={shape} rot={rot} pivot=({px},{py})"
-            )
-
-        # Horizontal collision shadow check (right)
-        old_h_right = self.tetromino.next_move_horizontal_collide(self.tetromino.blocks, 1)
-        core_h_right = not TetrisCore.is_valid_pos(
-            self.core_grid, shape, rot, px + 1, py
-        )
-        if old_h_right != core_h_right:
-            print(
-                f"\u26a0\ufe0f H-RIGHT MISMATCH: sprite={old_h_right} core={core_h_right} "
-                f"shape={shape} rot={rot} pivot=({px},{py})"
-            )
-
-        if old_collide:
+        if collide:
             if not self.lock_timer_active:
                 self.timerss['lock delay'].activate()
                 self.lock_timer_active = True

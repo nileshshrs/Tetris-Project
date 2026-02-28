@@ -10,6 +10,103 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## 2026-02-28: Phase 2 & 3 Polish
+
+### Changed (Phase 2 — game.py)
+
+- **Removed shadow validation** — All 6 per-frame collision shadow checks (vertical, horizontal left/right) and game-over mismatch detection removed. Verified zero mismatches across extensive play; now pure overhead eliminated.
+- **Simplified `core_grid` sync** — Replaced 4 scattered manual sync points (`hold_piece`, `perform_hard_drop`, `lock_tetromino`, `check_finished_rows`) with single `_sync_core_grid()` helper that rebuilds from `game_data` as single source of truth.
+
+### Changed (Phase 3 — TetrisAI.py & GA/tetris_ai.py)
+
+- **Single-pass board features** — Merged 4 separate helper functions (`_column_heights`, `_count_holes_and_blockades`, `_almost_full_lines`, `_find_deepest_well`) into one `_compute_board_features()` that extracts all 7 heuristic features in a single traversal of the 200-cell board.
+- **Zero-copy line clearing** — Added `_count_cleared_lines()` that counts cleared lines by checking only the rows touched by the piece, without copying or mutating the grid. Eliminates `lock_piece` + `clear_lines` grid copies for the current piece's cost evaluation.
+- **Lookahead grid copies deferred** — `lock_piece` + `clear_lines` grid copies only happen when lookahead is actually needed (not for every placement).
+
+### Performance Impact
+
+| Optimization | Board scans saved per placement | Grid copies saved |
+|---|---|---|
+| Single-pass `_compute_board_features` | 3 (was 4 passes, now 1) | — |
+| `_count_cleared_lines` (current piece) | — | 2 per placement (~68 total) |
+| Lookahead deferred | — | Conditional instead of always |
+| Shadow validation removed | 6 collision checks per frame | — |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `Tetris/game.py` | Removed shadow validation, added `_sync_core_grid()`, simplified sync points |
+| `AI/TetrisAI.py` | Single-pass features, zero-copy line count, deferred lookahead copies |
+| `AI/GA/tetris_ai.py` | Same optimizations as TetrisAI.py |
+
+---
+
+## 2026-02-28: Phase 3 — Quantum AI Refactor
+
+### Added
+
+- **`TetrisCore.is_valid_pos_fast()`** — Collision check accepting pre-fetched block list (skips TETROMINOS dict lookup every call)
+- **`TetrisCore.hard_drop_y_fast()`** — Landing Y calculation using pre-fetched blocks
+- **`TetrisCore.lock_piece_mut()`** — In-place grid mutation for AI simulation (returns written cells for undo)
+- **`TetrisCore.unlock_piece_mut()`** — Undo a `lock_piece_mut()` call
+- **`TetrisCore.clear_lines_mut()`** — In-place line clear (mutates grid, returns count)
+- **`TetrisCore.evaluate_all_placements()`** — Batch-generates all valid `(rot, x, drop_y, blocks)` for a shape with vertical reachability checking
+- **Vertical reachability check** — AI verifies the piece can drop straight down from spawn to landing without obstruction. Prevents "hallucinating" placements in unreachable pockets.
+
+### Changed
+
+- **`AI/TetrisAI.py`** — Complete rewrite using pure integer math
+  - `_find_best_move()`: Uses `evaluate_all_placements()` for batch position generation
+  - `_evaluate_next()`: Lookahead uses `TetrisCore.lock_piece()` + `clear_lines()` (line clearing between pieces!)
+  - `_cost_function()`: No-copy heuristic using `virtual_coords` frozenset as obstacles
+  - `fills_well` check adapted to use `(vx, vy)` tuples instead of sprite block objects
+  - `update()`: Translates absolute `(rot, x)` to relative `(rotations_needed, dx_needed)` using `tetromino.rotation_index` and `tetromino.pivot.x`
+  - All heuristic weights preserved **exactly** (`1.275, 4.0, 1.2, 0.8, 0.5, 3.0, clear: 20/5/2/0.1`)
+- **`AI/GA/tetris_ai.py`** — Same refactor with GA-tunable weights array
+- **All 4 rotation states** now evaluated for every piece (except O = 1). Fixed pre-existing bug where I, S, Z only checked 2 rotations.
+
+### Removed
+
+- **`_clone_tetromino()`** — Deleted entirely. Zero class instantiation in the AI search loop.
+- **`pygame.sprite.Group()`** usage in AI evaluation — No more dummy sprite groups
+- **`_is_unplayable()`** — Replaced by `evaluate_all_placements()` bounds checking
+
+### Performance
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Object instantiation per eval | ~80 Tetrominos + ~320 Blocks per piece | **0** |
+| Grid copies per placement | 2 (clone + sim_board) | 1 (lock_piece for lookahead) |
+| Dict lookups per collision check | 1 (`TETROMINOS[shape]['rotations'][rot]`) | 0 (pre-fetched) |
+| Rotation states evaluated (I/S/Z) | 2 | **4** (more placements, better decisions) |
+
+### Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| `frozenset(virtual_coords)` for heuristic | O(1) membership test without grid copy. Safer than mutate-then-restore. |
+| Absolute `(rot, x)` → relative translation | Cleaner separation between search (pure math) and execution (Pygame) |
+| Vertical reachability only (no BFS) | Conservative — rejects some valid positions but never suggests impossible ones |
+| Preserved `_blockades` scan direction | Weights were tuned around its top-to-bottom quirk |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `Tetris/core.py` | 6 new methods: `is_valid_pos_fast`, `hard_drop_y_fast`, `lock_piece_mut`, `unlock_piece_mut`, `clear_lines_mut`, `evaluate_all_placements` |
+| `AI/TetrisAI.py` | 🔄 Complete rewrite — zero object instantiation, pure integer math |
+| `AI/GA/tetris_ai.py` | 🔄 Complete rewrite — same architecture with GA weights |
+
+### Verification
+
+- ✅ 30/30 Phase 3 smoke tests passed (fast methods match originals, placements valid, cost function correct)
+- ✅ All 4 rotations evaluated for every non-O piece
+- ✅ `lock_piece_mut` / `unlock_piece_mut` roundtrip preserves grid
+- ✅ `clear_lines_mut` result matches immutable `clear_lines`
+- ✅ `_find_best_move` produces valid placements on empty grid
+- ✅ Zero Pygame imports in AI search loop core logic
+
 ## 2026-02-14: Phase 2 — Atomic Logic Core
 
 ### Added

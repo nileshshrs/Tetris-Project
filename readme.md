@@ -6,10 +6,10 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 
 ## Overview
 
-- **AI Type**: Heuristic-based using weighted board evaluation  
+- **AI Type**: Heuristic-based using weighted board evaluation (zero object instantiation — pure integer math)  
 - **Optimization**: Genetic Algorithm (selection, crossover, mutation)  
 - **Lookahead**: One-step lookahead (current + next tetromino)  
-- **Engine**: Custom Pygame Tetris engine with scoring, ghost pieces, hold, lock delay  
+- **Engine**: Custom Pygame Tetris engine with headless `TetrisCore` logic layer (zero Pygame dependency)  
 - **Parallel Training**: Multi-tray evaluation using multiprocessing  
 - **Evaluation**: Based on score, lines, survival time, and average move quality  
 
@@ -18,11 +18,11 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 ```text
 Tetris-Project/
 ├── AI/
-│   └── TetrisAI.py             # Core AI logic and cost evaluation
+│   └── TetrisAI.py             # AI logic — pure integer math, zero object instantiation
 ├── GA/
 │   ├── genetic_algorithm.py    # GA evolution logic
 │   ├── optimize.py             # GA training pipeline
-│   ├── tetris_ai.py            # Agent wrapper for GA
+│   ├── tetris_ai.py            # Agent wrapper for GA (same Phase 3 architecture)
 │   └── gauntlet.py             # Gauntlet comparison of top agents
 ├── notebooks/
 │   ├── agent_analysis.ipynb
@@ -36,13 +36,14 @@ Tetris-Project/
 │   ├── assets/
 │   │   ├── graphics/
 │   │   └── sound/
+│   ├── core.py                 # Headless logic engine (zero Pygame, pure integer)
 │   ├── game.py
 │   ├── main.py                 # Entry point (AI-controlled Tetris)
 │   ├── held.py
 │   ├── lines.py
 │   ├── preview.py
 │   ├── score.py
-│   ├── settings.py
+│   ├── settings.py             # Static SRS rotation tables + kick data
 │   └── timers.py
 ├── requirements.txt
 └── README.md
@@ -127,6 +128,8 @@ For detailed information about updates, improvements, and version history, see t
 | 2026-02-07 | Phase 1 ✅ | **SRS Complete** — I-piece fixed to have 4 distinct rotation states per official SRS spec |
 | 2026-02-14 | Phase 1 Polish | **AI 4-rotation fix**, CCW rotation keybinding, tuple-based rotation, dead code cleanup |
 | 2026-02-14 | Phase 2 ✅ | **Atomic Logic Core** — `core.py` headless engine, shadow validation, zero collision mismatches |
+| 2026-02-28 | Phase 3 ✅ | **Quantum AI Refactor** — Zero object instantiation, pure integer math, 4-rotation eval, vertical reachability, move caching |
+| 2026-02-28 | Phase 2 & 3 Polish | **Performance polish** — Removed shadow validation, single-pass board features, zero-copy line counting, simplified `core_grid` sync |
 
 ---
 
