@@ -101,13 +101,10 @@ def _count_cleared_lines(grid, blocks, pos_x, pos_y,
 
 
 class TetrisAI:
-    def __init__(self, game, tetromino_class, weights=None):
+    def __init__(self, game, weights=None):
         self.game = game
-        self.Tetrominos = tetromino_class
         self.last_action_time = 0
         self.delay = 130
-        self.rows = ROWS
-        self.cols = COLUMNS
         self.weights = weights or [1.2, 4.0, 1.2, 0.8, 0.5, 3.0, 20, 5, 2, 0.1]
 
         self._cached_move = None
@@ -254,7 +251,7 @@ class TetrisAI:
         if well_col != -1:
             for vx, vy in virtual_coords:
                 if vx == well_col:
-                    if vy == ROWS - 1 or board[vy + 1][vx]:
+                    if vy >= ROWS - 1 or (vy + 1 < ROWS and board[vy + 1][vx]):
                         fills_well = True
                         break
 

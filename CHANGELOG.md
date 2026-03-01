@@ -10,6 +10,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## 2026-03-01: Phase 1–3 Final Polish
+
+### Fixed
+
+- **`w1` weight set → list** (`AI/TetrisAI.py`) — `w1` used curly braces (`set`) instead of square brackets (`list`). Sets are unordered, so indexing by position would silently scramble weights. Changed to `list`.
+- **`fills_well` boundary guard** (`AI/TetrisAI.py`, `AI/GA/tetris_ai.py`) — Added defensive `vy >= ROWS - 1` check before accessing `board[vy + 1]` to prevent potential `IndexError`.
+
+### Removed
+
+- **`TETROMINOS_WEIGHTS`** (`settings.py`) — Dead code leftover from the deleted weighted bag system. The active 7-bag doesn't use it.
+- **`self.rows` / `self.cols`** (`AI/GA/tetris_ai.py`) — Instance attributes set but never read; module-level `ROWS`/`COLUMNS` constants are used directly.
+- **`core_grid` + `_sync_core_grid()`** (`game.py`) — Integer mirror grid maintained on every line clear but never read after shadow validation removal. Eliminated unnecessary `grid_from_game_data()` call per line clear.
+- **`create_new_tetromino_called`** (`game.py`) — Flag set in 4 places (`__init__`, `move_horizontal`, `move_down`, `rotate`) but never read by any code.
+- **`else: pass`** (`game.py: Tetrominos.move_down()`) — Unnecessary empty branch removed.
+- **`self.Tetrominos`** (`AI/TetrisAI.py`, `AI/GA/tetris_ai.py`) — `tetromino_class` parameter and attribute removed from both AI constructors. The Phase 3 AI never instantiates Tetromino objects.
+- **Redundant reachability loop** (`core.py: evaluate_all_placements()`) — `hard_drop_y_fast()` already validates every Y during its downward scan; the explicit reachability re-check was proving the same thing twice.
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `AI/TetrisAI.py` | `w1` set→list, `fills_well` guard, removed `self.Tetrominos` |
+| `AI/GA/tetris_ai.py` | `fills_well` guard, removed `self.rows`/`self.cols`/`self.Tetrominos` |
+| `Tetris/game.py` | Removed `core_grid`, `_sync_core_grid()`, `create_new_tetromino_called`, `else: pass`; updated AI constructor call |
+| `Tetris/settings.py` | Removed dead `TETROMINOS_WEIGHTS` |
+| `Tetris/core.py` | Removed redundant reachability loop, simplified visibility check |
+
+---
+
 ## 2026-02-28: Phase 2 & 3 Polish
 
 ### Changed (Phase 2 — game.py)

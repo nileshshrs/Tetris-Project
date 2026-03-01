@@ -360,17 +360,8 @@ class TetrisCore:
 
                 drop_y = _drop(grid, blocks, x, spawn_y, cols, rows)
 
-                # Simple vertical reachability: every Y from spawn to drop
-                reachable = True
-                for y in range(spawn_y + 1, drop_y + 1):
-                    if not _valid(grid, blocks, x, y, cols, rows):
-                        reachable = False
-                        break
-                if not reachable:
-                    continue
-
                 # All blocks must be on the visible grid (y >= 0)
-                if any(pos_y + by < 0 for _, by in blocks for pos_y in (drop_y,)):
+                if any(drop_y + by < 0 for _, by in blocks):
                     continue
 
                 placements.append((rot, x, drop_y, blocks))

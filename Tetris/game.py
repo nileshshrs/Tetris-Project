@@ -46,8 +46,6 @@ class Game:
         self.num_tetris = 0
 
         self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
-        # Phase 2: Integer mirror grid for headless logic validation
-        self.core_grid = TetrisCore.create_grid()
         self.tetromino = Tetrominos(
             get_next_tetromino(self.current_bag), 
             self.sprites, 
@@ -69,7 +67,7 @@ class Game:
         self.current_level = 1
         self.current_lines = 0
         self.current_next_shape = None  # <-- Set by Main after each get_next_shape()
-        self.ai = TetrisAI(self, Tetrominos)
+        self.ai = TetrisAI(self)
         self.is_game_over = False
 
     def calculate_score(self, lines_cleared):
@@ -220,7 +218,7 @@ class Game:
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = block
 
-        self._sync_core_grid()
+
 
         lines = len(delete_rows)
         if lines == 1:
@@ -241,9 +239,7 @@ class Game:
         self.create_new_tetromino()
         self.lock_timer_active = False
 
-    def _sync_core_grid(self):
-        """Rebuild core_grid from game_data — single source of truth."""
-        self.core_grid = TetrisCore.grid_from_game_data(self.game_data)
+
 
     def run(self):
         if self.is_game_over:
@@ -301,7 +297,7 @@ class Tetrominos:
             block_pos = (self.pivot.x + bx, self.pivot.y + by)
             self.blocks.append(Block(group, block_pos, self.color, use_offset=False))
         
-        self.create_new_tetromino_called = False
+
 
 
     def next_move_horizontal_collide(self, blocks, amount):
@@ -317,7 +313,6 @@ class Tetrominos:
             for block in self.blocks:
                 block.pos.x += amount
             self.pivot.x += amount  # Keep pivot in sync
-            self.create_new_tetromino_called = False 
 
 
     def move_down(self):
@@ -325,9 +320,7 @@ class Tetrominos:
             for block in self.blocks:
                 block.pos.y += 1
             self.pivot.y += 1  # Keep pivot in sync
-            self.create_new_tetromino_called = False
-        else:
-            pass
+
 
 
     def rotate(self, clockwise=True):
@@ -367,7 +360,7 @@ class Tetrominos:
                     self.blocks[i].pos.x = self.pivot.x + bx
                     self.blocks[i].pos.y = self.pivot.y + by
                 
-                self.create_new_tetromino_called = False
+
                 return True
         
         # All kicks failed

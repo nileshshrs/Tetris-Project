@@ -18,32 +18,32 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 ```text
 Tetris-Project/
 ├── AI/
-│   └── TetrisAI.py             # AI logic — pure integer math, zero object instantiation
-├── GA/
-│   ├── genetic_algorithm.py    # GA evolution logic
-│   ├── optimize.py             # GA training pipeline
-│   ├── tetris_ai.py            # Agent wrapper for GA (same Phase 3 architecture)
-│   └── gauntlet.py             # Gauntlet comparison of top agents
+│   ├── TetrisAI.py             # AI logic — pure integer math, zero object instantiation
+│   └── GA/
+│       ├── genetic_algorithm.py # GA evolution logic
+│       ├── optimize.py          # GA training pipeline
+│       ├── tetris_ai.py         # Agent wrapper for GA (same Phase 3 architecture)
+│       └── gauntlet.py          # Gauntlet comparison of top agents
 ├── notebooks/
 │   ├── agent_analysis.ipynb
 │   ├── extract_agent.ipynb
 │   ├── ga_plots.ipynb
 │   └── gauntlet_comparison.ipynb
 ├── results/
-│   ├── GA/                     # GA generation logs
-│   └── gauntlet/               # Evaluation logs
+│   ├── GA/                      # GA generation logs
+│   └── gauntlet/                # Evaluation logs
 ├── Tetris/
 │   ├── assets/
 │   │   ├── graphics/
 │   │   └── sound/
-│   ├── core.py                 # Headless logic engine (zero Pygame, pure integer)
+│   ├── core.py                  # Headless logic engine (zero Pygame, pure integer)
 │   ├── game.py
-│   ├── main.py                 # Entry point (AI-controlled Tetris)
+│   ├── main.py                  # Entry point (AI-controlled Tetris)
 │   ├── held.py
 │   ├── lines.py
 │   ├── preview.py
 │   ├── score.py
-│   ├── settings.py             # Static SRS rotation tables + kick data
+│   ├── settings.py              # Static SRS rotation tables + kick data
 │   └── timers.py
 ├── requirements.txt
 └── README.md
@@ -130,6 +130,7 @@ For detailed information about updates, improvements, and version history, see t
 | 2026-02-14 | Phase 2 ✅ | **Atomic Logic Core** — `core.py` headless engine, shadow validation, zero collision mismatches |
 | 2026-02-28 | Phase 3 ✅ | **Quantum AI Refactor** — Zero object instantiation, pure integer math, 4-rotation eval, vertical reachability, move caching |
 | 2026-02-28 | Phase 2 & 3 Polish | **Performance polish** — Removed shadow validation, single-pass board features, zero-copy line counting, simplified `core_grid` sync |
+| 2026-03-01 | Final Polish | **Code hygiene** — Fixed `w1` set→list bug, `fills_well` boundary guard, removed all dead code (`core_grid`, `TETROMINOS_WEIGHTS`, `create_new_tetromino_called`, unused AI params) |
 
 ---
 

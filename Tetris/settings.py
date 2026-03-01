@@ -153,15 +153,6 @@ SRS_KICKS_I = {
 
 SCORE_DATA = {1: 40, 2: 100, 3: 300, 4: 1200}
 
-TETROMINOS_WEIGHTS = {
-    'T': 14.6,
-    'O': 14.2,
-    'J': 14.3,
-    'L': 13.9,
-    'I': 13.9,
-    'S': 14.7,
-    'Z': 14.3
-}
 
 
 def create_7bag():

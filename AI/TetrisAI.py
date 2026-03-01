@@ -140,11 +140,10 @@ class TetrisAI:
     all board logic to TetrisCore static methods.
     """
 
-    def __init__(self, game, tetromino_class):
+    def __init__(self, game):
         self.game = game
-        self.Tetrominos = tetromino_class  # kept for interface compat
         self.last_action_time = 0
-        self.delay = 75
+        self.delay = 60
 
         # ---- Move cache: compute once per piece, not every frame ----
         self._cached_move = None       # (best_rot, best_x)
@@ -332,7 +331,7 @@ class TetrisAI:
         if well_col != -1:
             for vx, vy in virtual_coords:
                 if vx == well_col:
-                    if vy == ROWS - 1 or board[vy + 1][vx]:
+                    if vy >= ROWS - 1 or (vy + 1 < ROWS and board[vy + 1][vx]):
                         fills_well = True
                         break
 
@@ -357,7 +356,7 @@ class TetrisAI:
 # ---------------------------------------------------------------------------
 # best possible weight from GA
 
-w1 = {
+w1 = [
     5.144482627321173,
     4.592403558759385,
     0.3629109377693661,
@@ -368,7 +367,7 @@ w1 = {
     0.14853117878737487,
     3.5644486713487082,
     3.0656886100418195
-}
+]
 w2 = [
     9.199501774279456,
     11.643503548109585,
