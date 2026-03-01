@@ -14,7 +14,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **`score.py` border rendering** — Border was drawn using screen-space `self.rect` on the local-coordinate `self.surface`, causing it to render outside visible bounds. Changed to `self.surface.get_rect()`.
 - **`timers.py` `set_interval()` silent no-op** — Previously ignored calls when timer was inactive, meaning the duration wouldn't update. Now always updates `self.duration` and only resets `start_time` when active.
 - **`game.py` AI import path** — Changed from fragile `sys.path.append(os.path.abspath('.'))` (CWD-dependent) to `__file__`-relative path. Now works regardless of which directory the script is run from.
 - **`game.py` `move_down()` return value** — `Tetrominos.move_down()` now returns `True`/`False` so the AI's fallback hard-drop loop (`while tetromino.move_down()`) works correctly.
@@ -23,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Removed
 
+- **`score.py` border** — Completely removed the static border surrounding the score/timer surface for a cleaner UI.
 - **`self.current_bag`** (`game.py`) — `Game` created its own bag but never used it; piece spawning is handled entirely by `Main.get_next_shape()`. Initial tetromino now spawns through the same pipeline.
 - **`self.tetromino_touching_floor`** (`game.py`) — Set to `False` but never read by any code.
 - **`current_bag` module-level variable** (`settings.py`) — Created at import time but unused; both `Game` and `Main` create their own bags.
@@ -41,7 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 |------|---------|
 | `Tetris/game.py` | Robust AI import, removed dead `current_bag`/`tetromino_touching_floor`/stale comments, `move_down()` returns bool, simplified `next_move_vertical_collide` |
 | `Tetris/timers.py` | Tabs→spaces, `set_interval()` always updates duration |
-| `Tetris/score.py` | Fixed border rect, removed scaffolding comment |
+| `Tetris/score.py` | Removed border rendering, removed scaffolding comment |
 | `Tetris/lines.py` | Removed unused `load` import |
 | `Tetris/settings.py` | Removed dead module-level `current_bag` |
 | `AI/TetrisAI.py` | Removed unused `_lock`/`_unlock` aliases, fixed docstring |

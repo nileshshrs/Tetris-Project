@@ -131,7 +131,7 @@ For detailed information about updates, improvements, and version history, see t
 | 2026-02-28 | Phase 3 ✅ | **Quantum AI Refactor** — Zero object instantiation, pure integer math, 4-rotation eval, vertical reachability, move caching |
 | 2026-02-28 | Phase 2 & 3 Polish | **Performance polish** — Removed shadow validation, single-pass board features, zero-copy line counting, simplified `core_grid` sync |
 | 2026-03-01 | Final Polish | **Code hygiene** — Fixed `w1` set→list bug, `fills_well` boundary guard, removed all dead code (`core_grid`, `TETROMINOS_WEIGHTS`, `create_new_tetromino_called`, unused AI params) |
-| 2026-03-01 | Polish Pass 2 | **Robustness & cleanup** — Fixed `score.py` border rect, `timers.py` `set_interval()` no-op, robust AI import path, removed dead code (`current_bag`, `tetromino_touching_floor`, unused imports), tabs→spaces |
+| 2026-03-01 | Polish Pass 2 | **Robustness & cleanup** — Removed `score.py` border, fixed `timers.py` `set_interval()` no-op, robust AI import path, removed dead code (`current_bag`, `tetromino_touching_floor`, unused imports), tabs→spaces |
 
 ---
 
