@@ -2,12 +2,10 @@ from settings import *
 from timers import Timer
 from core import TetrisCore
 
-#ai part
 import sys
 import os
-sys.path.append(os.path.abspath('.'))
-from AI.TetrisAI import TetrisAI 
-#ai part
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from AI.TetrisAI import TetrisAI
 
 #GA part
 # from AI.GA.tetris_ai import TetrisAI
@@ -17,11 +15,8 @@ class Game:
     def __init__(self, get_next_shape, update_score, get_held_shape):
         self.surface = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
         self.display_surface = pygame.display.get_surface()
-        # The next two lines are for standalone only, comment or remove in tray mode:
-
         self.rect = self.surface.get_rect(topleft = (PADDING+SIDEBAR_WIDTH+PADDING, PADDING))
 
-        # The next two lines are for standalone only, comment or remove in tray mode:
 
         self.sprites = pygame.sprite.Group()
         self.line_surface = self.surface.copy()
@@ -33,7 +28,7 @@ class Game:
         self.fast_drop_speed = UPDATE_START_SPEED * 0.1
         self.is_fast_drop = False
         self.hard_drop_in_progress = False
-        self.current_bag = create_7bag()
+
         self.get_next_shape = get_next_shape
         self.get_held_shape = get_held_shape
         self.update_score = update_score
@@ -47,7 +42,7 @@ class Game:
 
         self.game_data = [[0 for x in range(COLUMNS)] for y in range(ROWS)]
         self.tetromino = Tetrominos(
-            get_next_tetromino(self.current_bag), 
+            get_next_shape(),
             self.sprites, 
             self.create_new_tetromino, 
             self.game_data
@@ -61,7 +56,7 @@ class Game:
         self.timerss['vertical move'].activate()
 
         self.lock_timer_active = False
-        self.tetromino_touching_floor = False 
+
 
         self.current_score =  0
         self.current_level = 1
@@ -269,12 +264,10 @@ class Game:
             pygame.draw.rect(self.surface, (200, 200, 200), ghost_rect, 2)
         self.sprites.draw(self.surface)
         self.draw_grid()
-        # The next two lines are for standalone only, comment or remove in tray mode:
 
         self.display_surface.blit(self.surface, self.rect.topleft)
         pygame.draw.rect(self.display_surface, LINE_COLOR, self.rect, 2, 2)
 
-        # The next two lines are for standalone only, comment or remove in tray mode:
 
 
 class Tetrominos:
@@ -306,7 +299,7 @@ class Tetrominos:
 
     def next_move_vertical_collide(self, blocks, amount):
         collision_list = [block.vertical_collide(int(block.pos.y + amount), self.game_data) for block in self.blocks]
-        return True if any(collision_list) else False
+        return any(collision_list)
 
     def move_horizontal(self, amount):
         if not self.next_move_horizontal_collide(self.blocks, amount):
@@ -320,6 +313,8 @@ class Tetrominos:
             for block in self.blocks:
                 block.pos.y += 1
             self.pivot.y += 1  # Keep pivot in sync
+            return True
+        return False
 
 
 

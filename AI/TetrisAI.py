@@ -284,7 +284,7 @@ class TetrisAI:
     def _evaluate_next(self, grid, shape):
         """
         Evaluate the best possible score for `shape` on `grid`.
-        Uses lock_piece_mut/unlock_piece_mut to avoid grid copies.
+        Uses no-copy virtual coords for speed.
         """
         placements = TetrisCore.evaluate_all_placements(
             grid, shape, _SPAWN_Y, COLUMNS, ROWS
@@ -293,8 +293,6 @@ class TetrisAI:
             return float("-inf")
 
         best_score = float("-inf")
-        _lock = TetrisCore.lock_piece_mut
-        _unlock = TetrisCore.unlock_piece_mut
 
         for rot, x, drop_y, blocks in placements:
             virtual_coords = [

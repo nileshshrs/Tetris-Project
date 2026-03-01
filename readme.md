@@ -64,7 +64,7 @@ python Tetris/main.py
 Train a population of AI agents using a genetic algorithm. The training process evolves agent weights over generations by evaluating their performance on key metrics such as score, lines cleared, level reached, and survival time. Agents are selected, mutated, and crossed over based on their fitness, resulting in increasingly optimized gameplay strategies.
 
 ```bash
-python GA/optimize.py
+python AI/GA/optimize.py
 ```
 
 ### 3. **Evaluate Top Agents in Gauntlet Mode**
@@ -72,7 +72,7 @@ python GA/optimize.py
 Run a gauntlet-style tournament to compare the top-performing agents after training. This evaluation pits the best agents against each other in a series of head-to-head matches, logging their performance and enabling detailed analysis of agent strategies and effectiveness.
 
 ```bash
-python GA/gauntlet.py
+python AI/GA/gauntlet.py
 ```
 ---
 
@@ -131,6 +131,7 @@ For detailed information about updates, improvements, and version history, see t
 | 2026-02-28 | Phase 3 ✅ | **Quantum AI Refactor** — Zero object instantiation, pure integer math, 4-rotation eval, vertical reachability, move caching |
 | 2026-02-28 | Phase 2 & 3 Polish | **Performance polish** — Removed shadow validation, single-pass board features, zero-copy line counting, simplified `core_grid` sync |
 | 2026-03-01 | Final Polish | **Code hygiene** — Fixed `w1` set→list bug, `fills_well` boundary guard, removed all dead code (`core_grid`, `TETROMINOS_WEIGHTS`, `create_new_tetromino_called`, unused AI params) |
+| 2026-03-01 | Polish Pass 2 | **Robustness & cleanup** — Fixed `score.py` border rect, `timers.py` `set_interval()` no-op, robust AI import path, removed dead code (`current_bag`, `tetromino_touching_floor`, unused imports), tabs→spaces |
 
 ---
 

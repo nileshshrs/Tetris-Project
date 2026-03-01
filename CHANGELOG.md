@@ -10,6 +10,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## 2026-03-01: Phase 1–3 Second Polish Pass
+
+### Fixed
+
+- **`score.py` border rendering** — Border was drawn using screen-space `self.rect` on the local-coordinate `self.surface`, causing it to render outside visible bounds. Changed to `self.surface.get_rect()`.
+- **`timers.py` `set_interval()` silent no-op** — Previously ignored calls when timer was inactive, meaning the duration wouldn't update. Now always updates `self.duration` and only resets `start_time` when active.
+- **`game.py` AI import path** — Changed from fragile `sys.path.append(os.path.abspath('.'))` (CWD-dependent) to `__file__`-relative path. Now works regardless of which directory the script is run from.
+- **`game.py` `move_down()` return value** — `Tetrominos.move_down()` now returns `True`/`False` so the AI's fallback hard-drop loop (`while tetromino.move_down()`) works correctly.
+- **`game.py` `next_move_vertical_collide()` verbose return** — Simplified `return True if any(...) else False` to `return any(...)`.
+- **`readme.md` GA run commands** — Fixed `python GA/optimize.py` → `python AI/GA/optimize.py` and `python GA/gauntlet.py` → `python AI/GA/gauntlet.py`.
+
+### Removed
+
+- **`self.current_bag`** (`game.py`) — `Game` created its own bag but never used it; piece spawning is handled entirely by `Main.get_next_shape()`. Initial tetromino now spawns through the same pipeline.
+- **`self.tetromino_touching_floor`** (`game.py`) — Set to `False` but never read by any code.
+- **`current_bag` module-level variable** (`settings.py`) — Created at import time but unused; both `Game` and `Main` create their own bags.
+- **Stale "tray mode" comments** (`game.py`) — Four comments referencing "the next two lines" where those lines had been removed.
+- **Unused `_lock`/`_unlock` aliases** (`AI/TetrisAI.py`) — Dead local variables and misleading docstring in `_evaluate_next()`.
+- **Unused `load` import** (`lines.py`) — `from pygame.image import load` was never used.
+- **Scaffolding comment** (`score.py`) — Leftover `# <--- ADD THIS LINE` instruction.
+
+### Changed
+
+- **`timers.py` indentation** — Converted tabs to 4-space indentation, matching all other files in the project.
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `Tetris/game.py` | Robust AI import, removed dead `current_bag`/`tetromino_touching_floor`/stale comments, `move_down()` returns bool, simplified `next_move_vertical_collide` |
+| `Tetris/timers.py` | Tabs→spaces, `set_interval()` always updates duration |
+| `Tetris/score.py` | Fixed border rect, removed scaffolding comment |
+| `Tetris/lines.py` | Removed unused `load` import |
+| `Tetris/settings.py` | Removed dead module-level `current_bag` |
+| `AI/TetrisAI.py` | Removed unused `_lock`/`_unlock` aliases, fixed docstring |
+| `readme.md` | Fixed GA run command paths |
+
+---
+
 ## 2026-03-01: Phase 1–3 Final Polish
 
 ### Fixed

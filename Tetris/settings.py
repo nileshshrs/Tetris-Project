@@ -171,5 +171,3 @@ def get_next_tetromino(bag):
         bag[:] = create_7bag()
     return bag.pop()
 
-# Initialize the bag as usual
-current_bag = create_7bag()

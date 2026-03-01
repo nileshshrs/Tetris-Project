@@ -22,7 +22,7 @@ class Score:
         self.score = 0
         # The next two lines are for standalone only, comment or remove in tray mode:
 
-        self.levels = 1        # <---------------- ADD THIS LINE
+        self.levels = 1
 
         # The next two lines are for standalone only, comment or remove in tray mode:
 
@@ -60,5 +60,5 @@ class Score:
             self.display_text((x, y_label), label)
             self.display_text((x, y_value), str(value))
 
-        pygame.draw.rect(self.surface, LINE_COLOR, self.rect, 2)
+        pygame.draw.rect(self.surface, LINE_COLOR, self.surface.get_rect(), 2)
         self.display_surface.blit(self.surface, self.rect)

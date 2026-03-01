@@ -1,6 +1,5 @@
 from settings import *
 from os import path
-from pygame.image import load
 
 class Lines:
     def __init__(self):
