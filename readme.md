@@ -133,6 +133,7 @@ For detailed information about updates, improvements, and version history, see t
 | 2026-03-01 | Final Polish | **Code hygiene** — Fixed `w1` set→list bug, `fills_well` boundary guard, removed all dead code (`core_grid`, `TETROMINOS_WEIGHTS`, `create_new_tetromino_called`, unused AI params) |
 | 2026-03-01 | Polish Pass 2 | **Robustness & cleanup** — Removed `score.py` border, fixed `timers.py` `set_interval()` no-op, robust AI import path, removed dead code (`current_bag`, `tetromino_touching_floor`, unused imports), tabs→spaces |
 | 2026-03-07 | Phase 4 ✅ | **High-Performance Renderer** — Removed all Sprite Groups and `Block` class, pure integer `game_data`, efficient `bg_surface` pixel baking |
+| 2026-03-07 | Phase 5 ✅ | **Modern Mechanics** — Implemented Lock Delay (Infinity Rule), max move limiter, and professional DAS/ARR keyboard timings |
 
 ---
 

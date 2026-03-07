@@ -20,7 +20,8 @@ WINDOW_HEIGHT = GAME_HEIGHT + PADDING * 2
 
 # game behaviour 
 UPDATE_START_SPEED = 15 #change it to 800 for normal run
-MOVE_WAIT_TIME = 150
+DAS_DELAY = 150
+ARR_SPEED = 30
 ROTATE_WAIT_TIME = 170
 BLOCK_OFFSET = pygame.Vector2((COLUMNS // 2)-1, -1)
 LOCK_DELAY_TIME = 500  # in milliseconds

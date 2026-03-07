@@ -43,6 +43,8 @@ class Game:
         self.update_score = update_score
         self.is_held = False
         self.held_piece = None
+        self.current_move_dir = 0
+        self.lock_move_count = 0
 
         self.num_1line = 0
         self.num_2line = 0
@@ -56,7 +58,7 @@ class Game:
         )
         self.timerss= {
             'vertical move':  Timer(UPDATE_START_SPEED, True, self.move_down),
-            'horizontal move': Timer(MOVE_WAIT_TIME),
+            'horizontal move': Timer(DAS_DELAY),
             'rotate': Timer(ROTATE_WAIT_TIME),
             'lock delay': Timer(LOCK_DELAY_TIME, False, self.lock_tetromino)
         }
@@ -106,6 +108,15 @@ class Game:
                 new_shape,
                 self.game_data
             )
+            self.lock_move_count = 0
+            self.timerss['lock delay'].deactivate()
+            self.lock_timer_active = False
+            self.lock_move_count = 0
+
+    def _on_movement(self):
+        if self.lock_timer_active and self.lock_move_count < 15:
+            self.timerss['lock delay'].activate()
+            self.lock_move_count += 1
 
     def move_down(self):
         self.tetromino.move_down()
@@ -115,6 +126,7 @@ class Game:
             pass
         self.lock_tetromino()
         self.timerss['vertical move'].set_interval(self.drop_speed)
+        self.is_fast_drop = False
 
     def create_new_tetromino(self):
         if self.is_game_over:
@@ -131,6 +143,7 @@ class Game:
             self.is_game_over = True
             return
         self.tetromino = temp_tetromino
+        self.lock_move_count = 0
 
     def timers_update(self):
         for timerss in self.timerss.values():
@@ -150,13 +163,31 @@ class Game:
                 self.is_fast_drop = False 
                 self.timerss['vertical move'].set_interval(self.drop_speed)
 
-        if not self.timerss['horizontal move'].active:
-            if keys[pygame.K_LEFT]:
-                self.tetromino.move_horizontal(-1)
+        # Horizontal Movement (DAS & ARR)
+        move_dir = 0
+        if keys[pygame.K_LEFT]:
+            move_dir = -1
+        elif keys[pygame.K_RIGHT]:
+            move_dir = 1
+            
+        if move_dir != 0:
+            if self.current_move_dir != move_dir:
+                # Initial press
+                self.current_move_dir = move_dir
+                if self.tetromino.move_horizontal(move_dir):
+                    self._on_movement()
+                self.timerss["horizontal move"].set_interval(DAS_DELAY)
                 self.timerss["horizontal move"].activate()
-            if keys[pygame.K_RIGHT]:
-                self.tetromino.move_horizontal(1)
-                self.timerss["horizontal move"].activate()
+            else:
+                # Held
+                if not self.timerss["horizontal move"].active:
+                    if self.tetromino.move_horizontal(move_dir):
+                        self._on_movement()
+                    self.timerss["horizontal move"].set_interval(ARR_SPEED)
+                    self.timerss["horizontal move"].activate()
+        else:
+            self.current_move_dir = 0
+            self.timerss["horizontal move"].deactivate()
 
         if keys[pygame.K_SPACE]:
             if not self.hard_drop_in_progress:
@@ -167,11 +198,14 @@ class Game:
 
         if not self.timerss['rotate'].active:
             if keys[pygame.K_UP]:
-                self.tetromino.rotate(clockwise=True)
+                if self.tetromino.rotate(clockwise=True):
+                    self._on_movement()
                 self.timerss["rotate"].activate()
             elif keys[pygame.K_z]:
-                self.tetromino.rotate(clockwise=False)
+                if self.tetromino.rotate(clockwise=False):
+                    self._on_movement()
                 self.timerss["rotate"].activate()
+                
         if keys[pygame.K_c] and not self.is_held:
             self.hold_piece()
  
@@ -210,12 +244,20 @@ class Game:
         px = int(self.tetromino.pivot.x)
         py = int(self.tetromino.pivot.y)
         cells = TetrisCore.get_piece_cells(self.tetromino.shape, self.tetromino.rotation_index, px, py)
+        
+        is_completely_above = True
         for x, y in cells:
+            if y >= 0:
+                is_completely_above = False
             if 0 <= x < COLUMNS and 0 <= y < ROWS:
                 self.game_data[y][x] = self.tetromino.color
                 # Bake to bg_surface
                 pygame.draw.rect(self.bg_surface, self.tetromino.color, (x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
         
+        if is_completely_above:
+            self.is_game_over = True
+            return
+            
         self.create_new_tetromino()
         self.lock_timer_active = False
 
@@ -282,6 +324,8 @@ class Tetrominos:
     def move_horizontal(self, amount):
         if TetrisCore.is_valid_pos(self.game_data, self.shape, self.rotation_index, int(self.pivot.x + amount), int(self.pivot.y)):
             self.pivot.x += amount
+            return True
+        return False
 
     def move_down(self):
         if TetrisCore.is_valid_pos(self.game_data, self.shape, self.rotation_index, int(self.pivot.x), int(self.pivot.y + 1)):

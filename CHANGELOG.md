@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-03-07: Phase 5 — Modern Mechanics (SRS & Timing)
+
+### Added
+- **Lock Delay (The "Infinity" Rule)** (`game.py`) — The piece's lock timer now resets when it is successfully rotated or moved horizontally, allowing for continuous manipulation against the floor before locking.
+- **Move Limit Guard** (`game.py`) — Implemented a maximum of 15 timer resets (`lock_move_count`) to prevent infinite stalling on the ground.
+- **DAS & ARR Horizontal Tracking** (`game.py`) — Overhauled horizontal movement handling. It now detects initial directional presses (applying `DAS_DELAY`) distinct from held keys (applying rapid `ARR_SPEED`), resulting in incredibly snappy, professional-feeling Guideline piece movement.
+
+### Changed
+- `timerss['horizontal move']` initialization now properly maps to `DAS_DELAY` instead of the old singular `MOVE_WAIT_TIME`.
+- Setting parameters (`DAS_DELAY = 150`, `ARR_SPEED = 30`) formally replace `MOVE_WAIT_TIME` in `settings.py`.
+
+---
+
 ## 2026-03-07: Phase 4 — High-Performance Renderer
 
 ### Changed
