@@ -34,8 +34,13 @@ class Main:
         print(f"[PID {os.getpid()}] Initial bag: {self.bag}")  # Debug: log bag order
         self.next_shapes = [get_next_tetromino(self.bag) for _ in range(3)]
 
+        # Pop the first shape for the initial tetromino (can't use get_next_shape
+        # yet because self.game doesn't exist until Game.__init__ returns)
+        initial_shape = self.next_shapes.pop(0)
+        self.next_shapes.append(get_next_tetromino(self.bag))
+
         # Game and UI components
-        self.game = Game(self.get_next_shape, self.update_score, self.get_held_shape)
+        self.game = Game(self.get_next_shape, self.update_score, self.get_held_shape, initial_shape)
         self.score = Score()
         self.lines = Lines()
         self.held = Held()
@@ -82,6 +87,10 @@ class Main:
                 text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
                 self.display_surface.blit(text, text_rect)
 
+                # --- FPS Display ---
+                fps_text = pygame.font.SysFont("arial", 16, bold=True).render(f"FPS: {int(self.clock.get_fps())}", True, (0, 255, 0))
+                self.display_surface.blit(fps_text, (10, 10))
+
                 pygame.display.update()
                 self.clock.tick(60)
                 continue
@@ -92,6 +101,10 @@ class Main:
             self.lines.run()
             self.preview.run(self.next_shapes)
             self.held.run()
+
+            # --- FPS Display ---
+            fps_text = pygame.font.SysFont("arial", 16, bold=True).render(f"FPS: {int(self.clock.get_fps())}", True, (0, 255, 0))
+            self.display_surface.blit(fps_text, (10, 10))
 
             pygame.display.update()
             self.clock.tick(60)

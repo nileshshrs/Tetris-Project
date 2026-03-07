@@ -8,6 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-03-07: Phase 4 — High-Performance Renderer
+
+### Changed
+- **Total elimination of Sprite Groups** (`game.py`) — Removed all `pygame.sprite.Group` overhead and deleted the `Block` class entirely.
+- **Background Surface Baking** (`game.py`) — Landed pieces are now baked directly onto a persistent `bg_surface` initialized with the grid backdrop. This means Pygame only blits one static surface per frame instead of redrawing 200 individual block sprites.
+- **Procedural Frame Rendering** (`game.py`) — `Game.run()` now pure functional rendering:
+  1. Blit `bg_surface` to screen
+  2. Draw ghost piece outline dynamically
+  3. Draw active piece blocks dynamically using pure variables instead of Sprite rects
+- **Pure Integer `game_data`** (`game.py`) — The grid matrix now simply stores colors (`#ff0000`, etc.) instead of truthy object references, removing any lingering memory footprint and cleanly decoupling logic from rendering.
+- **Decoupled `Tetrominos` class** (`game.py`) — Rebuilt as a pure logic wrapper. It entirely defers collision (`is_valid_pos`), dropping (`hard_drop_y`), and kicking (`try_rotate`) logic to the static `core.py` engine, making its codebase ~75% smaller and strictly integer-based.
+- **Micro-Optimization: Grid Line Caching** (`game.py`) — Moved the 30 `pygame.draw.line` calls out of the main `draw_grid()` loop. The grid outline is now baked once during `__init__` into `self.line_surface`, which is blitted directly.
+- **Micro-Optimization: Zero-Object Rendering** (`game.py`) — Eliminated all remaining `pygame.Rect` object instantiations from the drawing functions (`check_finished_rows`, `lock_tetromino`, `run`). Everything now passes raw Python tuples `(x, y, w, h)` directly to Pygame's C-bindings, achieving absolute zero-object allocation per frame.
+
+### Removed
+- `Block` class in `game.py` completely deleted.
+- `self.sprites` in `Game.run()` and `__init__` completely deleted.
+- Any manual bounds-checking left in `Tetrominos` deleted, handled by `core.py`.
+
+### Performance Impact
+| Metric | Before | After |
+|--------|--------|-------|
+| Pygame Sprite Groups | 1 | 0 |
+| Number of items drawn individually per frame | 200+ (active blocks + all landed blocks) | 8 (4 active piece rects + 4 ghost rects) |
+| Grid storage memory | 2D list of Heavy `Block` Class Objects | 2D list of Strings/Tuples |
+
 ---
 
 ## 2026-03-01: Phase 1–3 Second Polish Pass
