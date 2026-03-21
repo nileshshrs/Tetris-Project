@@ -143,7 +143,7 @@ class TetrisAI:
     def __init__(self, game, async_pipe=None):
         self.game = game
         self.last_action_time = 0
-        self.delay = 1000
+        self.delay = 60
 
         # ---- Move cache ----
         self._cached_move = None
