@@ -143,7 +143,7 @@ class TetrisAI:
     def __init__(self, game, async_pipe=None):
         self.game = game
         self.last_action_time = 0
-        self.delay = 60
+        self.delay = 1000
 
         # ---- Move cache ----
         self._cached_move = None
@@ -242,6 +242,15 @@ class TetrisAI:
         # ---- Execute cached move ----
         if self._cached_move is not None:
             best_rot, best_x = self._cached_move
+            
+            rot_needed = (best_rot - current_rot) % 4
+            dx_needed = best_x - current_px
+            
+            # Only delay the hard drop. Execute shifts and rotations instantly so gravity doesn't ruin the trajectory.
+            if rot_needed == 0 and dx_needed == 0:
+                if now - self.last_action_time < self.delay:
+                    return
+                    
             self._execute_move(tetromino, best_rot, best_x, current_rot, current_px, now)
 
     def _execute_move(self, tetromino, best_rot, best_x, current_rot, current_px, now):

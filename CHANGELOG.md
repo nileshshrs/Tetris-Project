@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - **OS-Agnostic Checkpoint Paths** (`AI/GA/optimize.py`, `AI/GA/gauntlet.py`, `AI/GA/genetic_algorithm.py`) — Replaced hardcoded 'D:\' directory paths with relative path logic (`os.path.join`) so logging functions correctly on any system.
 - **Dynamic AI Injection** (`Tetris/game.py`) — Replaced hardcoded standalone TetrisAI dependencies with a configurable `ai_class` and `ai_kwargs` passthrough, enabling the transparent injection of both the Async Player logic and GA Mutated logic.
+- **Async Execution Throttle** (`AI/TetrisAI.py`, `AI/GA/tetris_ai.py`) — Fixed a visual overlap parsing bug where the fast gravity (15ms) caused pieces to fall into the stack before the AI could horizontally shift them. The `self.delay` cooldown is now exclusively applied to the hard drop action, allowing instant shifts before the visual pausing queue.
 
 ---
 
