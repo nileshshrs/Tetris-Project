@@ -136,6 +136,7 @@ For detailed information about updates, improvements, and version history, see t
 | 2026-03-07 | Phase 5 ✅ | **Modern Mechanics** — Implemented Lock Delay (Infinity Rule), max move limiter, and professional DAS/ARR keyboard timings |
 | 2026-03-21 | Phase 6 ✅ | **Async Multiprocessing** — AI worker process, zero-stall 60 FPS gameplay, full multiprocessing GA support |
 | 2026-03-21 | Phase 6 Polish | **Async Execution Throttle** — Fixed visual overlapping by delaying hard drops without stalling sideways shifts |
+| 2026-03-21 | Audio | **Targeted BGM** — Added "Tetris Effect" In-game Mix audio support with auto-mute during headless GA training |
 
 ---
 

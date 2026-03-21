@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-03-21: BGM Audio Support
+
+### Added
+- **Soundtrack Integration** (`Tetris/main.py`) — Implemented Pygame audio mixer to seamlessly load and indefinitely loop "Tetris Effect: Connected - Yours Forever" (`yours_forever.mp3`) from the `Tetris/assets/graphics/audio/` directory. Audio stops cleanly upon reaching Game Over.
+- **Headless Audio Muting** (`Tetris/main.py`) — Added automatic environment variable check (`os.environ.get("SDL_VIDEODRIVER") != "dummy"`) to ensure music exclusively plays during visual gameplay, keeping headless genetic algorithm training completely silent and CPU-efficient.
+
 ## 2026-03-21: Phase 6 — Async Multiprocessing
 
 ### Added

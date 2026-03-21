@@ -27,6 +27,30 @@ class Main:
 
         # ==== UNCOMMENT FOR NORMAL/STANDALONE MODE ====
         pygame.init()
+        
+        # --- AUDIO INITIALIZATION ---
+        if os.environ.get("SDL_VIDEODRIVER") != "dummy":
+            try:
+                pygame.mixer.init()
+                # Try multiple extensions in case user downloads wav, mp3, or ogg
+                bgm_base = os.path.abspath(os.path.join(os.path.dirname(__file__), 'assets', 'graphics', 'audio', 'yours_forever'))
+                bgm_path = None
+                for ext in ['.mp3', '.ogg', '.wav', '.flac']:
+                    if os.path.exists(bgm_base + ext):
+                        bgm_path = bgm_base + ext
+                        break
+
+                if bgm_path:
+                    pygame.mixer.music.load(bgm_path)
+                    pygame.mixer.music.set_volume(0.5) # Adjust volume (0.0 to 1.0)
+                    pygame.mixer.music.play(-1) # Play in an infinite loop
+                else:
+                    print(f"[Audio] BGM file not found. To enable music, place 'yours_forever.mp3' (or .ogg/.wav) at:")
+                    print(f"[Audio] {bgm_base}.[ext]")
+            except Exception as e:
+                print(f"[Audio] Warning: Could not initialize or play BGM - {e}")
+        # ----------------------------
+
         self.display_surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
         pygame.display.set_caption("TETRIS")
@@ -105,6 +129,10 @@ class Main:
                 self.display_surface.fill(GRAY)
 
                 if self.game.is_game_over:
+                    # Stop music on game over
+                    if os.environ.get("SDL_VIDEODRIVER") != "dummy" and pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                        pygame.mixer.music.stop()
+
                     if self.score.frozen_time is None:
                         self.score.frozen_time = int(time.time() - self.score.start_time)
                     self.score.run()
