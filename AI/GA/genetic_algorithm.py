@@ -13,13 +13,13 @@ class GA:
         elite_size=2,
         log_file="ga_log.csv",
         checkpoint_file="ga_checkpoint.pkl",
-        misc_dir="D:\\Tetris-Project\\results\\ga"
+        misc_dir=None
     ):
         self.population_size = population_size
         self.n_weights = n_weights
         self.elite_size = elite_size
 
-        self.misc_dir = os.path.abspath(misc_dir)
+        self.misc_dir = os.path.abspath(misc_dir) if misc_dir else os.path.join(os.path.dirname(__file__), '..', '..', 'results', 'ga')
         os.makedirs(self.misc_dir, exist_ok=True)
         self.log_file = os.path.join(self.misc_dir, log_file)
         self.checkpoint_file = os.path.join(self.misc_dir, checkpoint_file)

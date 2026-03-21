@@ -2,17 +2,9 @@ from settings import *
 from timers import Timer
 from core import TetrisCore
 
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from AI.TetrisAI import TetrisAI
-
-#GA part
-# from AI.GA.tetris_ai import TetrisAI
-#GA part
-
 class Game: 
-    def __init__(self, get_next_shape, update_score, get_held_shape, initial_shape):
+    def __init__(self, get_next_shape, update_score, get_held_shape, initial_shape,
+                 ai_class=None, ai_kwargs=None):
         self.surface = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
         self.display_surface = pygame.display.get_surface()
         self.rect = self.surface.get_rect(topleft = (PADDING+SIDEBAR_WIDTH+PADDING, PADDING))
@@ -71,7 +63,13 @@ class Game:
         self.current_level = 1
         self.current_lines = 0
         self.current_next_shape = None  # <-- Set by Main after each get_next_shape()
-        self.ai = TetrisAI(self)
+        
+        # Configurable AI
+        if ai_class is None:
+            from AI.TetrisAI import TetrisAI as ai_class
+        ai_kwargs = ai_kwargs or {}
+        self.ai = ai_class(self, **ai_kwargs)
+        
         self.is_game_over = False
 
     def calculate_score(self, lines_cleared):

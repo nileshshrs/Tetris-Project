@@ -140,14 +140,20 @@ class TetrisAI:
     all board logic to TetrisCore static methods.
     """
 
-    def __init__(self, game):
+    def __init__(self, game, async_pipe=None):
         self.game = game
         self.last_action_time = 0
         self.delay = 60
 
-        # ---- Move cache: compute once per piece, not every frame ----
-        self._cached_move = None       # (best_rot, best_x)
-        self._cached_piece_id = None   # id(tetromino) — changes on new spawn
+        # ---- Move cache ----
+        self._cached_move = None
+        self._cached_piece_id = None
+
+        # ---- Async mode (Phase 6) ----
+        self._async_pipe = async_pipe    # parent_conn from multiprocessing.Pipe
+        self._piece_id_counter = 0       # Monotonic piece ID
+        self._pending_piece_id = None    # ID of the piece we're waiting on
+        self._last_sent_piece_id = None  # ID of current piece we sent to worker
 
         # ---- Heuristic weights (EXACT values from pre-refactor) ----
         # DO NOT CHANGE these without re-tuning / GA.
@@ -167,8 +173,6 @@ class TetrisAI:
             return
 
         now = pygame.time.get_ticks()
-        if now - self.last_action_time < self.delay:
-            return
 
         tetromino = self.game.tetromino
         shape = tetromino.shape
@@ -176,9 +180,16 @@ class TetrisAI:
         current_px = int(tetromino.pivot.x)
         piece_id = id(tetromino)
 
-        # ---- Use cached move if still the same piece -----------------
+        # ---- ASYNC MODE (Phase 6) ----
+        if self._async_pipe is not None:
+            self._update_async(tetromino, shape, current_rot, current_px, 
+                               piece_id, next_shape, now)
+            return
+
+        # ---- SYNC MODE (original, unchanged) ----
+        if now - self.last_action_time < self.delay:
+            return
         if piece_id != self._cached_piece_id:
-            # New piece — compute best move ONCE
             grid = [
                 [1 if self.game.game_data[r][c] else 0 for c in range(COLUMNS)]
                 for r in range(ROWS)
@@ -195,14 +206,49 @@ class TetrisAI:
             return
 
         best_rot, best_x = self._cached_move
+        self._execute_move(tetromino, best_rot, best_x, current_rot, current_px, now)
 
-        # ---- Translate absolute target to relative actions -----------
+    def _update_async(self, tetromino, shape, current_rot, current_px,
+                      piece_id, next_shape, now):
+        """Async update: send state to worker, poll for results."""
+        
+        # ---- Send new piece state to worker if piece changed ----
+        if piece_id != self._last_sent_piece_id:
+            self._piece_id_counter += 1
+            self._last_sent_piece_id = piece_id
+            self._pending_piece_id = self._piece_id_counter
+            self._cached_move = None
+
+            # Convert game_data to integer grid as tuple-of-tuples
+            grid_tuple = tuple(
+                tuple(1 if self.game.game_data[r][c] else 0 for c in range(COLUMNS))
+                for r in range(ROWS)
+            )
+            self._async_pipe.send(
+                (self._piece_id_counter, grid_tuple, shape, next_shape)
+            )
+
+        # ---- Poll for result (non-blocking) ----
+        while self._async_pipe.poll():
+            recv_id, best_rot, best_x = self._async_pipe.recv()
+            
+            # Stale check: discard if piece has changed since we sent
+            if recv_id == self._pending_piece_id:
+                if best_rot is not None:
+                    self._cached_move = (best_rot, best_x)
+                else:
+                    self._cached_move = None
+
+        # ---- Execute cached move ----
+        if self._cached_move is not None:
+            best_rot, best_x = self._cached_move
+            self._execute_move(tetromino, best_rot, best_x, current_rot, current_px, now)
+
+    def _execute_move(self, tetromino, best_rot, best_x, current_rot, current_px, now):
+        """Execute a computed move on the real tetromino."""
         rotations_needed = (best_rot - current_rot) % 4
-        # After rotating, the pivot X stays the same (SRS pivot system),
-        # so dx is simply the difference between target X and current X.
         dx_needed = best_x - current_px
 
-        # ---- Execute on the real tetromino ---------------------------
         for _ in range(rotations_needed):
             tetromino.rotate()
 
@@ -213,7 +259,6 @@ class TetrisAI:
             for _ in range(-dx_needed):
                 tetromino.move_horizontal(-1)
 
-        # Hard drop when the piece is already in position
         if rotations_needed == 0 and dx_needed == 0:
             if hasattr(self.game, 'perform_hard_drop'):
                 self.game.perform_hard_drop()

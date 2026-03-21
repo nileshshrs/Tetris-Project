@@ -148,7 +148,7 @@ agent_weights_list = [agent_weights_dict[name] for name in agent_names]
 N_AGENTS = 2
 GAMES_PER_AGENT = 20
 TIMEOUT_SECONDS = 600  # 30 seconds per game
-misc_dir = r"D:\\Tetris-Project\\results\\gauntlet\\run_7"
+misc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'results', 'gauntlet', 'run_7')
 os.makedirs(misc_dir, exist_ok=True)
 
 def run_agent(agent_name, agent_weights, num_games, timeout_sec):
@@ -164,11 +164,13 @@ def run_agent(agent_name, agent_weights, num_games, timeout_sec):
             writer.writerow([
                 "AgentName", "GameNumber", "Score", "NumTetrises", "Num3Line", "Num2Line", "Num1Line", "TimeSurvived", "TotalLinesCleared", "CurrentLevel"
             ])
+        from AI.GA.tetris_ai import TetrisAI as GATetrisAI
+        
         for game_num in range(num_games):
             try:
                 print(f"[START] Agent {agent_name}, Game {game_num+1}")
-                g = Main()
-                g.game.ai.weights = agent_weights
+                g = Main(use_async_ai=True, ai_class=GATetrisAI,
+                         ai_kwargs={'weights': agent_weights})
                 start_time = time.time()
                 while not g.game.is_game_over:
                     elapsed = time.time() - start_time

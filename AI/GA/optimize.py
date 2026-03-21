@@ -22,7 +22,7 @@ POP_SIZE = 10
 N_TRAYS = 4
 TIMEOUT_SECONDS = 360
 
-misc_dir = r"D:\\Tetris-Project\\results\\GA"
+misc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'results', 'GA')
 os.makedirs(misc_dir, exist_ok=True)
 AGENT_LOG_FILE = os.path.join(misc_dir, "agent_log.csv")
 GA_LOG_FILE = os.path.join(misc_dir, "ga_log.csv")
@@ -61,11 +61,13 @@ def run_tray(tray, generation, population, fitness_fn, result_queue):
     fitness_values = np.zeros(len(population))
     agent_stats = np.zeros((len(population), 8)) # Score, Lines, Level, Time, Num1,2,3,Tetris
 
+    from AI.GA.tetris_ai import TetrisAI as GATetrisAI
+    
     start_times = [time.time()] * len(population)
     games = []
     for i in range(len(population)):
-        g = Main()
-        g.game.ai.weights = population[i]
+        g = Main(use_async_ai=True, ai_class=GATetrisAI,
+                 ai_kwargs={'weights': population[i]})
         games.append(g)
     done = [False] * len(population)
     all_done = False

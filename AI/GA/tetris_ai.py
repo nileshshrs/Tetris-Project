@@ -101,7 +101,7 @@ def _count_cleared_lines(grid, blocks, pos_x, pos_y,
 
 
 class TetrisAI:
-    def __init__(self, game, weights=None):
+    def __init__(self, game, weights=None, async_pipe=None):
         self.game = game
         self.last_action_time = 0
         self.delay = 130
@@ -109,6 +109,12 @@ class TetrisAI:
 
         self._cached_move = None
         self._cached_piece_id = None
+
+        # ---- Async mode (Phase 6) ----
+        self._async_pipe = async_pipe    # parent_conn from multiprocessing.Pipe
+        self._piece_id_counter = 0       # Monotonic piece ID
+        self._pending_piece_id = None    # ID of the piece we're waiting on
+        self._last_sent_piece_id = None  # ID of current piece we sent to worker
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -118,14 +124,21 @@ class TetrisAI:
             return
 
         now = pygame.time.get_ticks()
-        if now - self.last_action_time < self.delay:
-            return
 
         tetromino = self.game.tetromino
         shape = tetromino.shape
         current_rot = tetromino.rotation_index
         current_px = int(tetromino.pivot.x)
         piece_id = id(tetromino)
+
+        # ---- ASYNC MODE (Phase 6) ----
+        if self._async_pipe is not None:
+            self._update_async(tetromino, shape, current_rot, current_px,
+                               piece_id, next_shape, now)
+            return
+
+        if now - self.last_action_time < self.delay:
+            return
 
         if piece_id != self._cached_piece_id:
             grid = [
@@ -144,7 +157,46 @@ class TetrisAI:
             return
 
         best_rot, best_x = self._cached_move
+        self._execute_move(tetromino, best_rot, best_x, current_rot, current_px, now)
 
+    def _update_async(self, tetromino, shape, current_rot, current_px,
+                      piece_id, next_shape, now):
+        """Async update: send state to worker, poll for results."""
+        
+        # ---- Send new piece state to worker if piece changed ----
+        if piece_id != self._last_sent_piece_id:
+            self._piece_id_counter += 1
+            self._last_sent_piece_id = piece_id
+            self._pending_piece_id = self._piece_id_counter
+            self._cached_move = None
+
+            # Convert game_data to integer grid as tuple-of-tuples
+            grid_tuple = tuple(
+                tuple(1 if self.game.game_data[r][c] else 0 for c in range(COLUMNS))
+                for r in range(ROWS)
+            )
+            self._async_pipe.send(
+                (self._piece_id_counter, grid_tuple, shape, next_shape)
+            )
+
+        # ---- Poll for result (non-blocking) ----
+        while self._async_pipe.poll():
+            recv_id, best_rot, best_x = self._async_pipe.recv()
+            
+            # Stale check: discard if piece has changed since we sent
+            if recv_id == self._pending_piece_id:
+                if best_rot is not None:
+                    self._cached_move = (best_rot, best_x)
+                else:
+                    self._cached_move = None
+
+        # ---- Execute cached move ----
+        if self._cached_move is not None:
+            best_rot, best_x = self._cached_move
+            self._execute_move(tetromino, best_rot, best_x, current_rot, current_px, now)
+
+    def _execute_move(self, tetromino, best_rot, best_x, current_rot, current_px, now):
+        """Execute a computed move on the real tetromino."""
         rotations_needed = (best_rot - current_rot) % 4
         dx_needed = best_x - current_px
 

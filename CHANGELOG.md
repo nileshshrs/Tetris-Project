@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-03-21: Phase 6 — Async Multiprocessing
+
+### Added
+- **AI Worker Process** (`AI/worker.py`) — Created a standalone headless worker script that runs the AI computation purely through integer math without Pygame overhead.
+- **Async Execution Mode** (`AI/TetrisAI.py`, `AI/GA/tetris_ai.py`) — Implemented `_update_async` logic using `multiprocessing.Pipe` payloads to send game state tuples and receive compute placements without blocking the main event thread.
+- **Multiprocessing Infrastructure** (`Tetris/main.py`) — Bootstraps `multiprocessing.Process`, configures connection pipes, and properly safeguards Windows runtime with `freeze_support()`.
+- **Parallel Genetic Algorithm Support** (`AI/GA/optimize.py`, `AI/GA/gauntlet.py`) — The GA trainers now completely initialize asynchronously (`use_async_ai=True`), allowing every tray's agent execution instance to isolate evaluation logic into concurrent background OS processes.
+
+### Fixed
+- **OS-Agnostic Checkpoint Paths** (`AI/GA/optimize.py`, `AI/GA/gauntlet.py`, `AI/GA/genetic_algorithm.py`) — Replaced hardcoded 'D:\' directory paths with relative path logic (`os.path.join`) so logging functions correctly on any system.
+- **Dynamic AI Injection** (`Tetris/game.py`) — Replaced hardcoded standalone TetrisAI dependencies with a configurable `ai_class` and `ai_kwargs` passthrough, enabling the transparent injection of both the Async Player logic and GA Mutated logic.
+
+---
+
 ## 2026-03-07: Phase 5 — Modern Mechanics (SRS & Timing)
 
 ### Added
