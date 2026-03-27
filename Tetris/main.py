@@ -16,13 +16,12 @@ from held import Held
 
 class Main:
     def __init__(self, seed=None, use_async_ai=True, ai_class=None, ai_kwargs=None):
-        # ===== Random Seed Debugging =====
+        # ===== Per-Game RNG Isolation =====
         if seed is None:
-            # Generate a unique seed using time, PID, and randomness
             seed = time.time_ns() ^ os.getpid() ^ random.randint(0, 1_000_000)
-        random.seed(seed)
-        rand_check = random.random()
-        print(f"[PID {os.getpid()}] Using seed: {seed} | Random check: {rand_check}")
+        self.rng = random.Random(seed)
+        rng_check = random.Random(seed).random()
+        print(f"[PID {os.getpid()}] Using seed: {seed} | RNG check: {rng_check}")
         # ==================================
 
         # ==== UNCOMMENT FOR NORMAL/STANDALONE MODE ====
@@ -57,14 +56,14 @@ class Main:
         # ===============================================
 
         # Piece bag and preview queue
-        self.bag = create_7bag()
+        self.bag = create_7bag(self.rng)
         print(f"[PID {os.getpid()}] Initial bag: {self.bag}")  # Debug: log bag order
-        self.next_shapes = [get_next_tetromino(self.bag) for _ in range(3)]
+        self.next_shapes = [get_next_tetromino(self.bag, self.rng) for _ in range(3)]
 
         # Pop the first shape for the initial tetromino (can't use get_next_shape
         # yet because self.game doesn't exist until Game.__init__ returns)
         initial_shape = self.next_shapes.pop(0)
-        self.next_shapes.append(get_next_tetromino(self.bag))
+        self.next_shapes.append(get_next_tetromino(self.bag, self.rng))
 
         # ---- Phase 6: Async AI Worker ----
         self._ai_process = None
@@ -109,7 +108,7 @@ class Main:
 
     def get_next_shape(self):
         next_piece = self.next_shapes.pop(0)
-        self.next_shapes.append(get_next_tetromino(self.bag))
+        self.next_shapes.append(get_next_tetromino(self.bag, self.rng))
         self.game.is_held = False
         self.game.current_next_shape = self.next_shapes[0]
         return next_piece

@@ -138,6 +138,12 @@ For detailed information about updates, improvements, and version history, see t
 | 2026-03-21 | Phase 6 Polish | **Async Execution Throttle** — Fixed visual overlapping by delaying hard drops without stalling sideways shifts |
 | 2026-03-21 | Audio | **Targeted BGM** — Added "Tetris Effect" In-game Mix audio support with auto-mute during headless GA training |
 
+### Phase 1 Updates
+
+| Date | Files | Description |
+|------|-------|-------------|
+| 2026-03-27 | `Tetris/settings.py`, `Tetris/main.py` | **Per-Game RNG Isolation** — `create_7bag()` and `get_next_tetromino()` now accept an optional RNG instance, and each `Main` object creates its own `random.Random` so GA trays no longer share piece-sequence state. |
+
 ---
 
 *For the complete changelog with technical details, benefits, and code examples, visit [CHANGELOG.md](CHANGELOG.md).*

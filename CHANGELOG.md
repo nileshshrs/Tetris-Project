@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-03-27: Phase 1 — Per-Game RNG Isolation
+
+### Added
+- **Isolated 7-bag shuffling** (`Tetris/settings.py`) — `create_7bag()` and `get_next_tetromino()` now accept an optional RNG instance so each game can draw pieces from its own independent random stream.
+- **Per-game RNG state** (`Tetris/main.py`) — `Main` now creates a dedicated `random.Random` per instance and threads it through all bag draws, preventing cross-game contamination during GA tray execution.
+
+### Fixed
+- **Cross-agent RNG contamination** (`Tetris/main.py`, `Tetris/settings.py`) — Parallel games no longer mutate a shared global random state, so agent fitness is no longer biased by the order in which boards consume pieces.
+
 ## 2026-03-21: BGM Audio Support
 
 ### Added

@@ -156,19 +156,22 @@ SCORE_DATA = {1: 40, 2: 100, 3: 300, 4: 1200}
 
 
 
-def create_7bag():
+def create_7bag(rng=None):
     """Creates a fair 7-bag of tetromino names, each appearing exactly once, shuffled."""
     bag = list(TETROMINOS.keys())
-    random.shuffle(bag)
+    if rng is not None:
+        rng.shuffle(bag)
+    else:
+        random.shuffle(bag)
     return bag
 
-def get_next_tetromino(bag):
+def get_next_tetromino(bag, rng=None):
     """
     Fetches the next tetromino from the bag.
     Refills and reshuffles the bag when empty.
     Returns the name as before ('I', 'O', etc).
     """
     if not bag:
-        bag[:] = create_7bag()
+        bag[:] = create_7bag(rng)
     return bag.pop()
 
