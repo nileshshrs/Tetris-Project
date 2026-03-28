@@ -8,6 +8,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-03-28: Default Weight Re-tuning & Fitness v2
+
+### Changed
+- **Default heuristic weights** (`AI/TetrisAI.py`, `AI/worker.py`) — Re-tuned for the corrected `fills_well` sign (Phase 3). Key changes: `agg_height` 1.275→3.5, `holes` 4.0→6.0, `bumpiness` 0.8→1.5, `fills_well` 3.0→1.5 (reduced to avoid over-aggressive well play), clear bonuses boosted (single 0.1→2, double 2→4, triple 5→8) so the AI no longer ignores non-Tetris clears.
+- **GA seed weights** (`AI/GA/optimize.py`) — Updated to include both re-tuned defaults and legacy baseline, seeding 2 agents in generation 0.
+- **Fitness function v2** (`AI/GA/genetic_algorithm.py`) — 8-component fitness replacing the 6-component v1:
+  - **Progressive lines**: diminishing returns past 200 lines (0.5x per line after 200)
+  - **Tetris bonus**: increased from 8x to 10x per Tetris
+  - **Efficiency gate**: reward only activates after 60s survival, uses sqrt scaling to soften extreme rates — prevents "lucky fast death" inflation
+  - **Tetris rate bonus**: new component rewarding proportion of lines from Tetrises (max 15 bonus at 100%)
+  - **Stronger death penalty**: 3-tier (soft 0-20 mid-game, harsh 40-55 early death)
+  - **Consistency gate**: flat bonus for agents clearing 100+ lines (10) or 250+ lines (25)
+  - **Score tiebreaker**: increased from 0.005 to 0.008
+
+### Fixed
+- **AI dying fast in standalone mode** — Old default weights `[1.275, 4.0, 1.2, 0.8, ...]` were tuned for the buggy cost function where `fills_well` was a penalty. After Phase 3 sign fix, these weights caused the AI to stack too aggressively for Tetrises while ignoring small clears (single clear bonus was only 0.1), leading to fast deaths when no I-piece arrived.
+
+## 2026-03-28: GA Engine Overhaul
+
+### Changed
+- **Population size** (`AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py`) — Scaled from 10 to 50 agents with elite_size increased from 2 to 4, providing 5× better coverage of the 10-dimensional weight space.
+- **Weight bounds** (`AI/GA/genetic_algorithm.py`) — Widened `uniform_range` from `(1e-4, 19.9999)` to `(1e-4, 30.0)` so clear bonus weights can explore higher values. `reflect_bounds` defaults updated to match.
+- **Fitness aggregation** (`AI/GA/optimize.py`) — Changed from `np.mean` to `np.median` across trays, reducing the impact of outlier lucky/unlucky games on agent fitness rankings.
+- **Population initialization** (`AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py`) — Replaced random-only initialization with `initialize_population(seed_weights=...)` that seeds 1+ known-good weight vectors into generation 0 for faster convergence.
+
+### Added
+- **Stagnation detection** (`AI/GA/genetic_algorithm.py`) — `check_stagnation()` tracks best-ever fitness and counts consecutive generations without improvement. After 8 stagnant generations, activates a mutation surge (3× mutation rate, 2× mutation scale, 2.5× uniform chance) to escape local optima. Surge deactivates automatically when progress resumes.
+- **Population diversity monitoring** (`AI/GA/genetic_algorithm.py`) — `population_diversity()` measures mean per-gene standard deviation across the population. When diversity drops below 0.5, 10% of the population is replaced with random agents during `select_and_breed()`.
+- **Self-crossover prevention** (`AI/GA/genetic_algorithm.py`) — Both roulette and tournament parent selection now resample (up to 10 attempts) to avoid selecting identical parents, which previously wasted population slots with clone children.
+- **Enhanced checkpoint migration** (`AI/GA/genetic_algorithm.py`) — `load_checkpoint()` now pads or truncates the population to match the current `population_size`, safely restores stagnation state, and prints diagnostic info on load.
+- **Diversity + stagnation logging** (`AI/GA/optimize.py`) — Generation summary now includes population diversity score and stagnation counter for training diagnostics.
+
+### Notes
+- **GA retraining required** — Population size, weight bounds, and fitness aggregation all changed. Old checkpoints are backward-compatible (migration logic handles population size mismatch) but should not be used for continued training. Start fresh.
+
+## 2026-03-28: Part 1 Phase 5 — GA Fitness Function Overhaul
+
+### Changed
+- **Fitness function redesign** (`AI/GA/genetic_algorithm.py`) — Completely replaced `evaluate_agent_fitness` with a balanced multi-component system:
+  - **Line score**: `1.0 * lines` (unchanged baseline)
+  - **Tetris dominance**: `8.0 * num_tetris` (up from `4.5`) — a single Tetris now yields 12.0 total fitness vs. 4.0 from four singles
+  - **Efficiency reward**: `3.0 * lines_per_min` — new component rewarding high clearing rates, not just raw totals
+  - **Survival (diminishing)**: `2.0 * sqrt(time_sec)` — replaced linear `0.09 * time` to prevent "coward" strategies from farming fitness
+  - **Score tiebreaker**: `0.005 * score` (down from `0.015`) — prevents game score from dominating over structural metrics
+  - **Tiered death penalty**: Proportional system replacing log-based penalty — harsh below 30% survival, moderate 30-70%, none above 70%
+- **Training timeout** (`AI/GA/optimize.py`) — Increased `TIMEOUT_SECONDS` from 360 to 600 (10 minutes) to give balanced agents room to demonstrate consistency
+- **`max_time` default** (`AI/GA/genetic_algorithm.py`) — Updated from `360` to `600` to match the new training timeout
+
+### Notes
+- **GA retraining required** — The fitness landscape is fundamentally different. Old checkpoints optimized against the previous fitness function and should not be loaded for continued training.
+
+## 2026-03-28: Part 1 Phase 4 — Worker Lifecycle Cleanup
+
+### Added
+- **`Main.close()` method** (`Tetris/main.py`) — Public API to explicitly tear down the AI worker process after a game finishes
+- **Context manager protocol** (`Tetris/main.py`) — `Main` now supports `with Main(...) as m:` usage via `__enter__`/`__exit__` for automatic cleanup
+- **Worker cleanup in GA trays** (`AI/GA/optimize.py`) — All games in each tray now call `main.close()` after results collection to prevent zombie processes
+- **Worker cleanup in gauntlet** (`AI/GA/gauntlet.py`) — Each gauntlet game now calls `g.close()` after logging to prevent process accumulation across 20+ games
+
 ## 2026-03-28: Part 1 Phase 3 — fills_well Reward Sign Fix
 
 ### Fixed

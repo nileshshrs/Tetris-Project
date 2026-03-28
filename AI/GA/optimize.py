@@ -18,9 +18,9 @@ from genetic_algorithm import GA
 # --- CONFIGURATION ---
 N_WEIGHTS = 10
 GENERATIONS = 50
-POP_SIZE = 10
+POP_SIZE = 50
 N_TRAYS = 4
-TIMEOUT_SECONDS = 360
+TIMEOUT_SECONDS = 600   # 10 minutes — balanced agents need room to show consistency
 
 misc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'results', 'GA')
 os.makedirs(misc_dir, exist_ok=True)
@@ -128,6 +128,10 @@ def run_tray(tray, generation, population, fitness_fn, result_queue):
         agent_stats[idx,6] = getattr(main.game, "num_3line", 0)
         agent_stats[idx,7] = getattr(main.game, "num_tetris", 0)
 
+    # Clean up worker processes for all games in this tray
+    for main in games:
+        main.close()
+
     with open(tray_log_name("agent_log", tray), "a", newline="") as f:
         csv.writer(f).writerows(tray_agent_log_rows)
 
@@ -165,7 +169,12 @@ if __name__ == '__main__':
     )
 
     if not os.path.exists(CHECKPOINT_FILE):
-        ga.population = [ga._random_weights() for _ in range(POP_SIZE)]
+        # Seed with known-good weights from previous runs to accelerate convergence
+        SEED_WEIGHTS = [
+            [3.5, 6.0, 1.5, 1.5, 0.8, 1.5, 20, 8, 4, 2],     # Re-tuned defaults for corrected cost function
+            [1.275, 4.0, 1.2, 0.8, 0.5, 3.0, 20, 5, 2, 0.1],  # Legacy manual-tuned baseline
+        ]
+        ga.initialize_population(seed_weights=SEED_WEIGHTS)
         start_gen = 0
         history = []
         with open(AGENT_LOG_FILE, "w", newline="") as f:
@@ -219,7 +228,7 @@ if __name__ == '__main__':
         print(f"===> [MAIN] Advancing to next generation {generation+1}\n========================\n")
 
         aggregate_agent_stats = np.mean(agent_stats_matrix, axis=0)
-        fitness_values = np.mean(fitness_matrix, axis=0).tolist()
+        fitness_values = np.median(fitness_matrix, axis=0).tolist()
         best_idx = int(np.argmax(fitness_values))
         avg_stats = aggregate_agent_stats[best_idx]
         ga_row = [
@@ -251,7 +260,12 @@ if __name__ == '__main__':
         with open(GA_LOG_FILE, "a", newline="") as f:
             csv.writer(f).writerow(ga_row)
 
-        print(f"Gen {generation+1}: avg {ga_row[3]:.1f} best {ga_row[2]} worst {ga_row[4]} std {ga_row[5]:.2f}")
+        best_fitness = float(np.max(fitness_values))
+        ga.check_stagnation(best_fitness)
+        diversity = ga.population_diversity()
+        print(f"Gen {generation}: median {ga_row[3]:.1f} best {ga_row[2]:.1f} "
+              f"worst {ga_row[4]:.1f} std {ga_row[5]:.2f} "
+              f"diversity={diversity:.3f} stagnation={ga.stagnation_counter}")
 
         ga.select_and_breed(fitness_values, generation)
         history.append(fitness_values)

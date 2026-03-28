@@ -197,6 +197,7 @@ def run_agent(agent_name, agent_weights, num_games, timeout_sec):
                 ])
                 f.flush()  # Ensure data is written immediately
                 print(f"[END]   Agent {agent_name}, Game {game_num+1}")
+                g.close()    # Clean up worker process
             except Exception as e:
                 print(f"Exception in agent {agent_name}, game {game_num+1}: {e}")
                 import traceback

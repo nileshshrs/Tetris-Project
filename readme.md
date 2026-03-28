@@ -37,7 +37,7 @@ Tetris-Project/
 ├── Tetris/
 │   ├── assets/
 │   │   ├── graphics/
-│   │   └── sound/
+│   │   └── audio/
 │   ├── core.py                  # Headless logic engine (zero Pygame, pure integer)
 │   ├── game.py
 │   ├── main.py                  # Entry point (AI-controlled Tetris)
@@ -126,6 +126,10 @@ For detailed information about updates, improvements, and version history, see t
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-03-28 | Weight Re-tune ✅ | **Default Weight Re-tuning & Fitness v2** — Re-tuned defaults for corrected fills_well sign (agg_height 3.5, holes 6.0, boosted small clears). Fitness v2: 8-component with efficiency gate, Tetris rate bonus, consistency gate, stronger death penalty. |
+| 2026-03-28 | GA Overhaul ✅ | **GA Engine Overhaul** — Population 10→50, stagnation detection + mutation surge, diversity injection, median fitness, self-crossover prevention, weight bounds widened to [0,30], seeded initialization. |
+| 2026-03-28 | Phase 5 (Part 1) ✅ | **GA Fitness Overhaul** — Redesigned fitness to reward efficiency (lines/min), Tetris dominance (8× bonus), sqrt-based survival, and tiered death penalties. Timeout raised to 600s. |
+| 2026-03-28 | Phase 4 (Part 1) ✅ | **Worker Lifecycle Cleanup** — Added `close()`/context manager to `Main`, cleanup calls in `optimize.py` and `gauntlet.py` to prevent zombie worker processes. |
 | 2026-03-28 | Phase 3 (Part 1) ✅ | **fills_well Reward Sign Fix** — Updated `AI/evaluator.py` so `fills_well` now reduces cost (reward) instead of increasing cost (penalty); this changes GA weight semantics. |
 | 2026-03-28 | Phase 2 (Part 1) ✅ | **Shared Evaluator Module** — Added `AI/evaluator.py` and refactored `AI/TetrisAI.py`, `AI/worker.py`, and `AI/GA/tetris_ai.py` to use one shared heuristic/cost/search implementation. |
 | 2026-02-07 | Phase 1 | **SRS Implementation** — Static rotation tables, official wall kicks, zero runtime math |
@@ -149,6 +153,10 @@ For detailed information about updates, improvements, and version history, see t
 | Phase 1 (Part 1) | 2026-03-27 | `Tetris/settings.py`, `Tetris/main.py` | **Per-Game RNG Isolation** — `create_7bag()` and `get_next_tetromino()` now accept an optional RNG instance, and each `Main` object creates its own `random.Random` so GA trays no longer share piece-sequence state. |
 | Phase 2 (Part 1) | 2026-03-28 | `AI/evaluator.py`, `AI/TetrisAI.py`, `AI/worker.py`, `AI/GA/tetris_ai.py` | **Shared Evaluator Extraction** — Consolidated duplicated feature extraction, line-clear counting, cost function, lookahead scoring, and best-move search into `AI/evaluator.py` as a single source of truth with zero Pygame dependency. |
 | Phase 3 (Part 1) | 2026-03-28 | `AI/evaluator.py` | **fills_well Sign Correction** — Flipped the `fills_well` term in the shared cost function so well-filling is rewarded instead of penalized. Existing GA checkpoints were trained under inverted semantics and should be retrained. |
+| Phase 4 (Part 1) | 2026-03-28 | `Tetris/main.py`, `AI/GA/optimize.py`, `AI/GA/gauntlet.py` | **Worker Lifecycle Cleanup** — Added `close()` and context manager to `Main`; GA trays and gauntlet games now explicitly clean up worker processes after each game finishes. |
+| Phase 5 (Part 1) | 2026-03-28 | `AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py` | **GA Fitness Overhaul** — Redesigned fitness to reward efficiency, Tetris dominance, sqrt survival, and tiered death penalties. Training timeout increased to 600s. |
+| GA Overhaul | 2026-03-28 | `AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py` | **GA Engine Overhaul** — Population scaled to 50 with elite=4, stagnation detection with adaptive mutation surge, diversity injection when pop converges, median-of-trays fitness, self-crossover prevention, weight bounds [0,30], seeded initialization, and enhanced checkpoint migration. |
+| Weight Re-tune | 2026-03-28 | `AI/TetrisAI.py`, `AI/worker.py`, `AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py` | **Default Weight Re-tuning & Fitness v2** — Re-tuned default weights for corrected `fills_well` sign, boosted small-clear bonuses. Fitness v2: 8-component with efficiency gate, Tetris rate bonus, consistency gate, stronger death penalty. |
 
 ---
 

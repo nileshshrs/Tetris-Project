@@ -54,15 +54,16 @@ class TetrisAI:
         self._pending_piece_id = None    # ID of the piece we're waiting on
         self._last_sent_piece_id = None  # ID of current piece we sent to worker
 
-        # ---- Heuristic weights (EXACT values from pre-refactor) ----
-        # DO NOT CHANGE these without re-tuning / GA.
-        self._w_agg_height = 1.275
-        self._w_holes = 4.0
-        self._w_blockades = 1.2
-        self._w_bumpiness = 0.8
-        self._w_almost_full = 0.5
-        self._w_fills_well = 3.0
-        self._clear_bonus = {4: 20, 3: 5, 2: 2, 1: 0.1}
+        # ---- Heuristic weights (re-tuned for corrected fills_well sign) ----
+        # After Phase 3 fills_well fix, fills_well is now a REWARD (subtracted from cost).
+        # Old weights were tuned when fills_well was a penalty — these are adjusted.
+        self._w_agg_height = 3.5      # Was 1.275 — increased to penalize stacking higher
+        self._w_holes = 6.0           # Was 4.0 — increased to strongly avoid holes
+        self._w_blockades = 1.5       # Was 1.2 — slightly increased
+        self._w_bumpiness = 1.5       # Was 0.8 — increased to keep surface flat
+        self._w_almost_full = 0.8     # Was 0.5 — increased reward for almost-full rows
+        self._w_fills_well = 1.5      # Was 3.0 — reduced to avoid over-aggressive well play
+        self._clear_bonus = {4: 20, 3: 8, 2: 4, 1: 2}  # Was {4:20,3:5,2:2,1:0.1} — boosted small clears
 
     # ------------------------------------------------------------------
     # Public entry point — called once per frame by Game.run()

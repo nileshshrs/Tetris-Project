@@ -190,6 +190,17 @@ class Main:
         # self.held.run()
         # No pygame.display.update()
 
+    def close(self):
+        """Public API to clean up worker process. Call after game finishes."""
+        self._cleanup()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     main = Main()

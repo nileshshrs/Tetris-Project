@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from evaluator import find_best_move
 
 
-_DEFAULT_WEIGHTS = [1.275, 4.0, 1.2, 0.8, 0.5, 3.0, 20, 5, 2, 0.1]
+_DEFAULT_WEIGHTS = [3.5, 6.0, 1.5, 1.5, 0.8, 1.5, 20, 8, 4, 2]
 
 
 def run_ai(pipe, weights=None):
