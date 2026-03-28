@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-03-28: Part 1 Phase 3 — fills_well Reward Sign Fix
+
+### Fixed
+- **fills_well reward inversion** (`AI/evaluator.py`) — Corrected the shared cost function term from `+ (w[5] if fills_well else 0)` to `- (w[5] if fills_well else 0)` so well-filling now decreases cost (reward) instead of increasing cost (penalty).
+
+### Changed
+- **AI behavior semantics** (`AI/evaluator.py`) — Runtime AI, worker AI, and GA AI now consistently treat `fills_well` as an incentive because all three paths delegate to the shared evaluator.
+
+### Validation
+- **Phase 1/2 pre-check passed** — RNG isolation and shared evaluator delegation checks passed before applying the Phase 3 fix.
+- **Phase 3 smoke test passed** — Shared evaluator move search executed successfully after the sign fix.
+
+### Notes
+- **GA retraining required** — Existing GA checkpoints and weight sets were optimized with inverted `fills_well` semantics and should be treated as stale for continued training.
+
 ## 2026-03-28: Part 1 Phase 2 — Shared Evaluator Module
 
 ### Added

@@ -163,14 +163,14 @@ def cost_function(board, virtual_coords, virtual_set, lines_cleared, weights):
     else:
         clear_bonus = 0
 
-    # Keep formula identical to pre-refactor behavior.
+    # fills_well should reduce cost (reward), not increase it.
     cost = (
         w[0] * agg_height
         + w[1] * holes
         + w[2] * blockades
         + w[3] * bumpiness
         - w[4] * almost_full
-        + (w[5] if fills_well else 0)
+        - (w[5] if fills_well else 0)
         - clear_bonus
     )
 

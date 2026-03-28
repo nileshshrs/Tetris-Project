@@ -126,6 +126,7 @@ For detailed information about updates, improvements, and version history, see t
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-03-28 | Phase 3 (Part 1) ✅ | **fills_well Reward Sign Fix** — Updated `AI/evaluator.py` so `fills_well` now reduces cost (reward) instead of increasing cost (penalty); this changes GA weight semantics. |
 | 2026-03-28 | Phase 2 (Part 1) ✅ | **Shared Evaluator Module** — Added `AI/evaluator.py` and refactored `AI/TetrisAI.py`, `AI/worker.py`, and `AI/GA/tetris_ai.py` to use one shared heuristic/cost/search implementation. |
 | 2026-02-07 | Phase 1 | **SRS Implementation** — Static rotation tables, official wall kicks, zero runtime math |
 | 2026-02-07 | Phase 1 ✅ | **SRS Complete** — I-piece fixed to have 4 distinct rotation states per official SRS spec |
@@ -141,17 +142,13 @@ For detailed information about updates, improvements, and version history, see t
 | 2026-03-21 | Phase 6 Polish | **Async Execution Throttle** — Fixed visual overlapping by delaying hard drops without stalling sideways shifts |
 | 2026-03-21 | Audio | **Targeted BGM** — Added "Tetris Effect" In-game Mix audio support with auto-mute during headless GA training |
 
-### Phase 1 Updates
+### Update
 
-| Date | Files | Description |
-|------|-------|-------------|
-| 2026-03-27 | `Tetris/settings.py`, `Tetris/main.py` | **Per-Game RNG Isolation** — `create_7bag()` and `get_next_tetromino()` now accept an optional RNG instance, and each `Main` object creates its own `random.Random` so GA trays no longer share piece-sequence state. |
-
-### Phase 2 Updates
-
-| Date | Files | Description |
-|------|-------|-------------|
-| 2026-03-28 | `AI/evaluator.py`, `AI/TetrisAI.py`, `AI/worker.py`, `AI/GA/tetris_ai.py` | **Shared Evaluator Extraction** — Consolidated duplicated feature extraction, line-clear counting, cost function, lookahead scoring, and best-move search into `AI/evaluator.py` as a single source of truth with zero Pygame dependency. |
+| Phase | Date | Files | Description |
+|------|------|-------|-------------|
+| Phase 1 (Part 1) | 2026-03-27 | `Tetris/settings.py`, `Tetris/main.py` | **Per-Game RNG Isolation** — `create_7bag()` and `get_next_tetromino()` now accept an optional RNG instance, and each `Main` object creates its own `random.Random` so GA trays no longer share piece-sequence state. |
+| Phase 2 (Part 1) | 2026-03-28 | `AI/evaluator.py`, `AI/TetrisAI.py`, `AI/worker.py`, `AI/GA/tetris_ai.py` | **Shared Evaluator Extraction** — Consolidated duplicated feature extraction, line-clear counting, cost function, lookahead scoring, and best-move search into `AI/evaluator.py` as a single source of truth with zero Pygame dependency. |
+| Phase 3 (Part 1) | 2026-03-28 | `AI/evaluator.py` | **fills_well Sign Correction** — Flipped the `fills_well` term in the shared cost function so well-filling is rewarded instead of penalized. Existing GA checkpoints were trained under inverted semantics and should be retrained. |
 
 ---
 
