@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-03-28: Part 1 Phase 2 — Shared Evaluator Module
+
+### Added
+- **Shared evaluator module** (`AI/evaluator.py`) — Added a single, zero-Pygame source of truth for `compute_board_features`, `count_cleared_lines`, `cost_function`, `evaluate_next`, and `find_best_move`.
+
+### Changed
+- **Runtime AI delegation** (`AI/TetrisAI.py`) — Removed duplicated heuristic/search internals and now delegates `_find_best_move` to `evaluator.find_best_move(...)` with existing runtime weights.
+- **GA AI delegation** (`AI/GA/tetris_ai.py`) — Removed duplicated heuristic/search internals and now delegates `_find_best_move` to `evaluator.find_best_move(...)` using GA-tuned weights.
+- **Async worker delegation** (`AI/worker.py`) — Removed duplicated worker-local evaluator logic and now routes move computation through the shared evaluator while preserving the existing pipe protocol.
+
+### Fixed
+- **Heuristic drift risk across modules** (`AI/TetrisAI.py`, `AI/worker.py`, `AI/GA/tetris_ai.py`) — Eliminated three separate heuristic implementations that could diverge over time; runtime AI, worker AI, and GA AI now evaluate placements with consistent logic.
+
+### Validation
+- **Gameplay startup check passed** — `python Tetris/main.py` launched successfully with the refactored evaluator path.
+- **Tray benchmark check passed** — Mini GA/tray benchmark completed successfully in `.venv` after dependency sync.
+
 ## 2026-03-27: Phase 1 — Per-Game RNG Isolation
 
 ### Added

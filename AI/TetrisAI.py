@@ -15,117 +15,16 @@ Key changes from Phase 2:
   - Performance: pre-fetched block coords, module-level constants, batch eval
 """
 
+import os
+import sys
+
 import pygame
-from settings import TETROMINOS, ROWS, COLUMNS
-from core import TetrisCore
+from Tetris.settings import ROWS, COLUMNS
 
-# ---------------------------------------------------------------------------
-# Module-level constants — avoid recomputing per call
-# ---------------------------------------------------------------------------
-_SPAWN_Y = -1  # Matches BLOCK_OFFSET.y in settings.py
-_SPAWN_X = (COLUMNS // 2) - 1  # Matches BLOCK_OFFSET.x in settings.py
+# Ensure AI/ is importable when run from different entry points.
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-
-# ---------------------------------------------------------------------------
-# Single-pass board feature extraction (replaces 4 separate scans)
-# ---------------------------------------------------------------------------
-def _compute_board_features(board, virtual_set):
-    """
-    Extract ALL heuristic features in a single pass over the board.
-
-    Returns:
-        (agg_height, holes, blockades, bumpiness, almost_full,
-         well_col, well_depth, heights)
-    """
-    heights = [0] * COLUMNS
-    holes = 0
-    blockades = 0
-    almost_full = 0
-
-    # ---- Single column pass: heights + holes + blockades ----
-    for col in range(COLUMNS):
-        block_found = False
-        found_hole = False
-        for row in range(ROWS):
-            occupied = board[row][col] != 0 or (col, row) in virtual_set
-            if occupied:
-                if not block_found:
-                    heights[col] = ROWS - row
-                    block_found = True
-                if found_hole:
-                    blockades += 1
-            else:
-                if block_found:
-                    holes += 1
-                found_hole = True
-
-    # ---- Aggregate height + bumpiness (from heights array) ----
-    agg_height = sum(heights)
-    bumpiness = 0
-    for i in range(COLUMNS - 1):
-        bumpiness += abs(heights[i] - heights[i + 1])
-
-    # ---- Almost-full lines (row pass) ----
-    for row_idx in range(ROWS):
-        empty = 0
-        for col in range(COLUMNS):
-            if not (board[row_idx][col] or (col, row_idx) in virtual_set):
-                empty += 1
-                if empty > 2:
-                    break
-        if 1 <= empty <= 2:
-            almost_full += 1
-
-    # ---- Well detection (from heights array) ----
-    max_well_depth = 0
-    well_col = -1
-    for c in range(COLUMNS):
-        left = heights[c - 1] if c > 0 else ROWS
-        right = heights[c + 1] if c < COLUMNS - 1 else ROWS
-        wd = min(left, right) - heights[c]
-        if wd > max_well_depth:
-            max_well_depth = wd
-            well_col = c
-
-    return (agg_height, holes, blockades, bumpiness, almost_full,
-            well_col, max_well_depth, heights)
-
-
-# ---------------------------------------------------------------------------
-# Fast line-clear count without grid copy
-# ---------------------------------------------------------------------------
-def _count_cleared_lines(grid, blocks, pos_x, pos_y,
-                         cols=COLUMNS, rows=ROWS):
-    """
-    Count how many lines would be cleared if piece is placed,
-    WITHOUT copying or mutating the grid.
-
-    Checks only the rows touched by the piece.
-    """
-    touched_rows = set()
-    for bx, by in blocks:
-        cy = pos_y + by
-        if 0 <= cy < rows:
-            touched_rows.add(cy)
-
-    count = 0
-    for ry in touched_rows:
-        full = True
-        for cx in range(cols):
-            cell_occupied = grid[ry][cx] != 0
-            if not cell_occupied:
-                # Check if one of the piece blocks fills this cell
-                found = False
-                for bx, by in blocks:
-                    if pos_x + bx == cx and pos_y + by == ry:
-                        found = True
-                        break
-                if not found:
-                    full = False
-                    break
-        if full:
-            count += 1
-    return count
+from evaluator import find_best_move
 
 
 # ---------------------------------------------------------------------------
@@ -283,124 +182,20 @@ class TetrisAI:
     # Core search — pure integer, zero Pygame, zero object instantiation
     # ------------------------------------------------------------------
     def _find_best_move(self, grid, shape, current_rot, next_shape):
-        """
-        Evaluate every reachable placement and return (best_rot, best_x).
-
-        Uses TetrisCore.evaluate_all_placements() for batch generation,
-        then scores each with the single-pass heuristic and 1-piece lookahead.
-        """
-        placements = TetrisCore.evaluate_all_placements(
-            grid, shape, _SPAWN_Y, COLUMNS, ROWS
-        )
-        if not placements:
-            return None
-
-        best_score = float("-inf")
-        best_rot = 0
-        best_x = _SPAWN_X
-
-        for rot, x, drop_y, blocks in placements:
-            # Virtual coordinates of the landed piece
-            virtual_coords = [
-                (x + bx, drop_y + by) for bx, by in blocks
-            ]
-            virtual_set = frozenset(virtual_coords)
-
-            # Count lines cleared without copying the grid
-            lines_cleared = _count_cleared_lines(grid, blocks, x, drop_y)
-
-            cost_now = self._cost_function(grid, virtual_coords, virtual_set,
-                                           lines_cleared)
-
-            # 1-piece lookahead on the cleared grid
-            if next_shape:
-                # Need actual grid with piece locked + lines cleared for lookahead
-                locked_grid = TetrisCore.lock_piece(grid, shape, rot, x, drop_y)
-                cleared_grid, _ = TetrisCore.clear_lines(locked_grid)
-                next_score = self._evaluate_next(cleared_grid, next_shape)
-                total_score = -cost_now + next_score
-            else:
-                total_score = -cost_now
-
-            if total_score > best_score:
-                best_score = total_score
-                best_rot = rot
-                best_x = x
-
-        if best_score == float("-inf"):
-            return None
-
-        return best_rot, best_x
-
-    # ------------------------------------------------------------------
-    # Lookahead evaluation — mutable ops, zero grid copies
-    # ------------------------------------------------------------------
-    def _evaluate_next(self, grid, shape):
-        """
-        Evaluate the best possible score for `shape` on `grid`.
-        Uses no-copy virtual coords for speed.
-        """
-        placements = TetrisCore.evaluate_all_placements(
-            grid, shape, _SPAWN_Y, COLUMNS, ROWS
-        )
-        if not placements:
-            return float("-inf")
-
-        best_score = float("-inf")
-
-        for rot, x, drop_y, blocks in placements:
-            virtual_coords = [
-                (x + bx, drop_y + by) for bx, by in blocks
-            ]
-            virtual_set = frozenset(virtual_coords)
-
-            # Count cleared lines without copying
-            lines_cleared = _count_cleared_lines(grid, blocks, x, drop_y)
-
-            score = -self._cost_function(grid, virtual_coords, virtual_set,
-                                         lines_cleared)
-            if score > best_score:
-                best_score = score
-
-        return best_score
-
-    # ------------------------------------------------------------------
-    # Heuristic cost function — single-pass, NO grid copy
-    # ------------------------------------------------------------------
-    def _cost_function(self, board, virtual_coords, virtual_set,
-                       lines_cleared=0):
-        """
-        Compute placement cost in a single pass over the board.
-        """
-        # ---- Single-pass feature extraction ----
-        (agg_height, holes, blockades, bumpiness, almost_full,
-         well_col, well_depth, heights) = _compute_board_features(
-            board, virtual_set
-        )
-
-        # ---- fills_well check ----
-        fills_well = False
-        if well_col != -1:
-            for vx, vy in virtual_coords:
-                if vx == well_col:
-                    if vy >= ROWS - 1 or (vy + 1 < ROWS and board[vy + 1][vx]):
-                        fills_well = True
-                        break
-
-        # ---- Clear bonus (exact same tiers) ----
-        clear_bonus = self._clear_bonus.get(lines_cleared, 0)
-
-        # ---- Weighted cost (EXACT pre-refactor formula) ----
-        cost = (
-            self._w_agg_height * agg_height +
-            self._w_holes * holes +
-            self._w_blockades * blockades +
-            self._w_bumpiness * bumpiness -
-            self._w_almost_full * almost_full +
-            (self._w_fills_well if fills_well else 0) -
-            clear_bonus
-        )
-        return cost
+        """Delegate move search to shared evaluator."""
+        weights = [
+            self._w_agg_height,
+            self._w_holes,
+            self._w_blockades,
+            self._w_bumpiness,
+            self._w_almost_full,
+            self._w_fills_well,
+            self._clear_bonus.get(4, 0),
+            self._clear_bonus.get(3, 0),
+            self._clear_bonus.get(2, 0),
+            self._clear_bonus.get(1, 0),
+        ]
+        return find_best_move(grid, shape, next_shape, weights)
 
 
 # ---------------------------------------------------------------------------

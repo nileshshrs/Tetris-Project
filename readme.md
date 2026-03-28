@@ -18,11 +18,13 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 ```text
 Tetris-Project/
 ├── AI/
-│   ├── TetrisAI.py             # AI logic — pure integer math, zero object instantiation
+│   ├── evaluator.py            # Shared heuristic evaluator (used by runtime AI, worker, and GA AI)
+│   ├── worker.py               # Async AI worker process (delegates to shared evaluator)
+│   ├── TetrisAI.py             # Runtime AI controller (delegates move search to shared evaluator)
 │   └── GA/
 │       ├── genetic_algorithm.py # GA evolution logic
 │       ├── optimize.py          # GA training pipeline
-│       ├── tetris_ai.py         # Agent wrapper for GA (same Phase 3 architecture)
+│       ├── tetris_ai.py         # GA agent wrapper (delegates move search to shared evaluator)
 │       └── gauntlet.py          # Gauntlet comparison of top agents
 ├── notebooks/
 │   ├── agent_analysis.ipynb
@@ -124,6 +126,7 @@ For detailed information about updates, improvements, and version history, see t
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-03-28 | Phase 2 (Part 1) ✅ | **Shared Evaluator Module** — Added `AI/evaluator.py` and refactored `AI/TetrisAI.py`, `AI/worker.py`, and `AI/GA/tetris_ai.py` to use one shared heuristic/cost/search implementation. |
 | 2026-02-07 | Phase 1 | **SRS Implementation** — Static rotation tables, official wall kicks, zero runtime math |
 | 2026-02-07 | Phase 1 ✅ | **SRS Complete** — I-piece fixed to have 4 distinct rotation states per official SRS spec |
 | 2026-02-14 | Phase 1 Polish | **AI 4-rotation fix**, CCW rotation keybinding, tuple-based rotation, dead code cleanup |
@@ -143,6 +146,12 @@ For detailed information about updates, improvements, and version history, see t
 | Date | Files | Description |
 |------|-------|-------------|
 | 2026-03-27 | `Tetris/settings.py`, `Tetris/main.py` | **Per-Game RNG Isolation** — `create_7bag()` and `get_next_tetromino()` now accept an optional RNG instance, and each `Main` object creates its own `random.Random` so GA trays no longer share piece-sequence state. |
+
+### Phase 2 Updates
+
+| Date | Files | Description |
+|------|-------|-------------|
+| 2026-03-28 | `AI/evaluator.py`, `AI/TetrisAI.py`, `AI/worker.py`, `AI/GA/tetris_ai.py` | **Shared Evaluator Extraction** — Consolidated duplicated feature extraction, line-clear counting, cost function, lookahead scoring, and best-move search into `AI/evaluator.py` as a single source of truth with zero Pygame dependency. |
 
 ---
 
