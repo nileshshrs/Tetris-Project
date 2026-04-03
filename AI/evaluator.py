@@ -14,7 +14,7 @@ import sys
 # Ensure Tetris/ is importable (for settings and core)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Tetris")))
 
-from Tetris.settings import COLUMNS, ROWS
+from Tetris.settings import COLUMNS, ROWS, TETROMINOS
 from Tetris.core import TetrisCore
 
 # Module-level constants
@@ -28,7 +28,7 @@ def compute_board_features(board, virtual_set):
 
     Returns:
         (agg_height, holes, blockades, bumpiness, almost_full,
-         well_col, well_depth, heights)
+        well_col, well_depth, heights)
     """
     heights = [0] * COLUMNS
     holes = 0
@@ -129,7 +129,7 @@ def cost_function(board, virtual_coords, virtual_set, lines_cleared, weights):
 
     weights order:
     [agg_height, holes, blockades, bumpiness, almost_full,
-     fills_well, clear_4, clear_3, clear_2, clear_1]
+    fills_well, clear_4, clear_3, clear_2, clear_1]
     """
     w = weights
 
@@ -199,6 +199,7 @@ def evaluate_next(grid, shape, weights):
 def find_best_move(grid, shape, next_shape, weights):
     """
     Find the best (rot, x) placement for the given shape on the grid.
+    1-step lookahead.
 
     Returns:
         (best_rot, best_x), or None if no valid placement exists.
@@ -234,3 +235,127 @@ def find_best_move(grid, shape, next_shape, weights):
         return None
 
     return best_rot, best_x
+
+
+def find_best_move_scored(grid, shape, next_shape, weights):
+    """
+    Same as find_best_move but also returns the total score.
+    Used by dual-worker system to compare play vs hold branch.
+
+    Returns:
+        (best_rot, best_x, best_score) or None
+    """
+    placements = TetrisCore.evaluate_all_placements(grid, shape, _SPAWN_Y, COLUMNS, ROWS)
+    if not placements:
+        return None
+
+    best_score = float("-inf")
+    best_rot = 0
+    best_x = _SPAWN_X
+
+    for rot, x, drop_y, blocks in placements:
+        virtual_coords = [(x + bx, drop_y + by) for bx, by in blocks]
+        virtual_set = frozenset(virtual_coords)
+        lines_cleared = count_cleared_lines(grid, blocks, x, drop_y)
+        cost_now = cost_function(grid, virtual_coords, virtual_set, lines_cleared, weights)
+
+        if next_shape:
+            locked_grid = TetrisCore.lock_piece(grid, shape, rot, x, drop_y)
+            cleared_grid, _ = TetrisCore.clear_lines(locked_grid)
+            next_score = evaluate_next(cleared_grid, next_shape, weights)
+            total_score = -cost_now + next_score
+        else:
+            total_score = -cost_now
+
+        if total_score > best_score:
+            best_score = total_score
+            best_rot = rot
+            best_x = x
+
+    if best_score == float("-inf"):
+        return None
+
+    return (best_rot, best_x, best_score)
+
+
+
+# ---------------------------------------------------------------------------
+# Hold-aware search (uses _score_placement for branch comparison)
+# ---------------------------------------------------------------------------
+
+def _score_placement(grid, shape, next_shape, rot, x, weights):
+    """Score a specific (rot, x) placement for comparison."""
+    rotations = TETROMINOS[shape]['rotations']
+    blocks = rotations[rot]
+    drop_y = TetrisCore.hard_drop_y_fast(grid, blocks, x, _SPAWN_Y, COLUMNS, ROWS)
+
+    virtual_coords = [(x + bx, drop_y + by) for bx, by in blocks]
+    virtual_set = frozenset(virtual_coords)
+    lines_cleared = count_cleared_lines(grid, blocks, x, drop_y)
+    cost_now = cost_function(grid, virtual_coords, virtual_set,
+                             lines_cleared, weights)
+
+    if next_shape:
+        locked_grid = TetrisCore.lock_piece(grid, shape, rot, x, drop_y)
+        cleared_grid, _ = TetrisCore.clear_lines(locked_grid)
+        next_score = evaluate_next(cleared_grid, next_shape, weights)
+        return -cost_now + next_score
+    else:
+        return -cost_now
+
+
+def find_best_move_with_hold(grid, shape, next_shape, held_piece, is_held,
+                              weights):
+    """
+    Find the best move considering both branches:
+      A) Play the current piece as-is
+      B) Hold current piece and play held_piece (or next_shape if no held piece)
+
+    Args:
+        grid: 2D integer grid
+        shape: Current piece key ('T', 'I', etc.)
+        next_shape: Next piece in preview queue
+        held_piece: Currently held piece key (str or None)
+        is_held: True if hold was already used this turn
+        weights: list of 10+ floats
+
+    Returns:
+        (best_rot, best_x, should_hold) or None
+    """
+    # ---- Branch A: Play current piece normally ----
+    result_a = find_best_move(grid, shape, next_shape, weights)
+    if result_a is not None:
+        rot_a, x_a = result_a
+        score_a = _score_placement(grid, shape, next_shape, rot_a, x_a, weights)
+    else:
+        score_a = float("-inf")
+
+    # ---- Branch B: Hold + play held piece ----
+    # Only consider hold if we haven't already held this turn
+    score_b = float("-inf")
+    result_b = None
+    if not is_held:
+        if held_piece is not None:
+            # Swap: play held_piece, next lookahead = next_shape
+            play_piece = held_piece
+            lookahead_piece = next_shape
+        else:
+            # First hold ever: play next_shape, next lookahead = (unknown, use None)
+            play_piece = next_shape
+            lookahead_piece = None
+
+        result_b = find_best_move(grid, play_piece, lookahead_piece, weights)
+        if result_b is not None:
+            rot_b, x_b = result_b
+            score_b = _score_placement(grid, play_piece, lookahead_piece,
+                                       rot_b, x_b, weights)
+
+    # ---- Pick the better branch ----
+    if score_a >= score_b:
+        if result_a is None:
+            return None
+        return (result_a[0], result_a[1], False)    # Play current, don't hold
+    else:
+        if result_b is None:
+            return None
+        return (result_b[0], result_b[1], True)     # Hold, then play

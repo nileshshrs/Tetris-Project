@@ -65,29 +65,41 @@ class Main:
         initial_shape = self.next_shapes.pop(0)
         self.next_shapes.append(get_next_tetromino(self.bag, self.rng))
 
-        # ---- Phase 6: Async AI Worker ----
-        self._ai_process = None
-        self._parent_conn = None
+        # ---- Phase 7: Dual-Worker Hold + 2-Step Lookahead ----
+        self._play_process = None      # Worker A: "play current piece"
+        self._hold_process = None      # Worker B: "hold & play held piece"
+        self._play_conn = None
+        self._hold_conn = None
 
         if use_async_ai:
-            self._parent_conn, child_conn = multiprocessing.Pipe()
-            
             # Import worker function
             sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-            from AI.worker import run_ai
-            
+            from AI.worker import run_ai_worker
+
             ai_kwargs = ai_kwargs or {}
             worker_weights = ai_kwargs.get('weights', None)
-            
-            self._ai_process = multiprocessing.Process(
-                target=run_ai,
-                args=(child_conn, worker_weights),
+
+            # Worker A — evaluates "play current piece" branch
+            self._play_conn, play_child = multiprocessing.Pipe()
+            self._play_process = multiprocessing.Process(
+                target=run_ai_worker,
+                args=(play_child, worker_weights),
                 daemon=True
             )
-            self._ai_process.start()
-            
-            # Pass pipe to AI through ai_kwargs
-            ai_kwargs['async_pipe'] = self._parent_conn
+            self._play_process.start()
+
+            # Worker B — evaluates "hold & play held piece" branch
+            self._hold_conn, hold_child = multiprocessing.Pipe()
+            self._hold_process = multiprocessing.Process(
+                target=run_ai_worker,
+                args=(hold_child, worker_weights),
+                daemon=True
+            )
+            self._hold_process.start()
+
+            # Pass BOTH pipes to AI through ai_kwargs
+            ai_kwargs['play_pipe'] = self._play_conn
+            ai_kwargs['hold_pipe'] = self._hold_conn
 
         # Game and UI components
         self.game = Game(
@@ -100,6 +112,7 @@ class Main:
         self.preview = Preview()
         self.game.current_next_shape = self.next_shapes[0]
 
+
     def update_score(self, lines, score, levels):
         self.score.score = score
         self.score.levels = levels
@@ -111,6 +124,7 @@ class Main:
         self.next_shapes.append(get_next_tetromino(self.bag, self.rng))
         self.game.is_held = False
         self.game.current_next_shape = self.next_shapes[0]
+
         return next_piece
 
     def get_held_shape(self, shape):
@@ -171,15 +185,17 @@ class Main:
             self._cleanup()
 
     def _cleanup(self):
-        """Clean up worker process."""
-        if self._parent_conn:
-            try:
-                self._parent_conn.send(None)  # shutdown signal
-            except Exception:
-                pass
-        if self._ai_process and self._ai_process.is_alive():
-            self._ai_process.terminate()
-            self._ai_process.join(timeout=2)
+        """Clean up both worker processes."""
+        for conn in [self._play_conn, self._hold_conn]:
+            if conn:
+                try:
+                    conn.send(None)    # Shutdown signal
+                except Exception:
+                    pass
+        for proc in [self._play_process, self._hold_process]:
+            if proc and proc.is_alive():
+                proc.terminate()
+                proc.join(timeout=2)
 
         # --- Tray mode: just draw a single frame for use in multi-board tray ---
         # self.game.surface.fill(GRAY)

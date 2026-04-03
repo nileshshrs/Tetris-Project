@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-04-03: Hold-Aware Search & Dual-Worker Architecture (Phase 1 Part 2)
+
+### Added
+- **Dual-Worker Architecture** (`TetrisAI.py`, `AI/worker.py`, `AI/GA/tetris_ai.py`) — The AI now evaluates two branches in parallel for every new piece:
+  - **PLAY branch**: Evaluates the best placement for the current piece (with 1-step lookahead).
+  - **HOLD branch**: Evaluates the best placement for the held piece (with 1-step lookahead).
+  The main process polls both workers and executes the move from the higher-scoring branch.
+- **Hold Decision Logic** (`evaluator.py`, `TetrisAI.py`) — The AI now detects when holding a piece is better than playing it, improving strategic flexibility.
+- **Auto-Versioning in Gauntlet** (`AI/GA/gauntlet.py`) — Results are now stored in timestamped folders (e.g., `results/gauntlet/v_20260403_142530/`), preventing accidental overwriting.
+
+### Changed
+- **Heuristic Weights Reverted** (`TetrisAI.py`, `AI/worker.py`) — Restored proven stable weight set (`[1.275, 4.0, ... 0.1]`). Previous experimental weights caused premature AI death following the `fills_well` sign fix.
+- **Worker Protocol Simplified** (`AI/worker.py`, `evaluator.py`) — Workers now use `find_best_move_scored()` to return both coordinates and score, allowing branch comparison in the main process.
+- **GA Engine Alignment** (`AI/GA/tetris_ai.py`) — Updated the GA agent wrapper to match the new dual-worker architecture for consistent training and evaluation.
+
+### Removed
+- **2-Step Lookahead Search** (`evaluator.py`, `worker.py`) — Removed `find_best_move_2step` and `evaluate_next_2step`. The 2-step lookahead (~40,000 evaluations) was too slow (~400ms latency), making the AI unresponsive in real-time play. Replaced with hold-aware 1-step lookahead (~5ms) using the dual-worker system.
+
+### Fixed
+- **Gauntlet Timeout Calculation** (`AI/GA/gauntlet.py`) — Fixed misleading comments regarding agent timeouts and verified they match the GA training timeout (600s).
+
 ## 2026-03-28: Default Weight Re-tuning & Fitness v2
 
 ### Changed

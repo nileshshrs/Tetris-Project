@@ -4,7 +4,7 @@ from core import TetrisCore
 
 class Game: 
     def __init__(self, get_next_shape, update_score, get_held_shape, initial_shape,
-                 ai_class=None, ai_kwargs=None):
+                ai_class=None, ai_kwargs=None):
         self.surface = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
         self.display_surface = pygame.display.get_surface()
         self.rect = self.surface.get_rect(topleft = (PADDING+SIDEBAR_WIDTH+PADDING, PADDING))
@@ -265,8 +265,12 @@ class Game:
         if self.is_game_over:
             return
         self.input()
-        # --- AI receives safe lookahead next piece ---
-        self.ai.update(next_shape=self.current_next_shape)
+        # --- AI receives safe lookahead next piece + hold info ---
+        self.ai.update(
+            next_shape=self.current_next_shape,
+            held_piece=self.held_piece,
+            is_held=self.is_held
+        )
         self.timers_update()
 
         # --- Collision detection ---

@@ -9,12 +9,12 @@ All methods are static — no instance state needed. The grid is
 always passed in, making these functions safe for parallel use.
 
 Phase 3 additions:
-  - is_valid_pos_fast()   : Accepts pre-fetched block list (skips dict lookup)
-  - hard_drop_y_fast()    : Uses pre-fetched blocks for inlined drop
-  - lock_piece_mut()      : In-place grid mutation (AI simulation speed)
-  - unlock_piece_mut()    : Undo in-place lock (restore grid after AI eval)
-  - clear_lines_mut()     : In-place line clear (returns cleared count)
-  - evaluate_all_placements() : Batch-generate all valid (rot, x, drop_y) for a shape
+- is_valid_pos_fast()   : Accepts pre-fetched block list (skips dict lookup)
+- hard_drop_y_fast()    : Uses pre-fetched blocks for inlined drop
+- lock_piece_mut()      : In-place grid mutation (AI simulation speed)
+- unlock_piece_mut()    : Undo in-place lock (restore grid after AI eval)
+- clear_lines_mut()     : In-place line clear (returns cleared count)
+- evaluate_all_placements() : Batch-generate all valid (rot, x, drop_y) for a shape
 """
 
 # Import only the data we need from settings (no Pygame objects used here)

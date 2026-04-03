@@ -1,18 +1,15 @@
 """
-Tetris AI — Phase 3: Quantum AI Refactor
+Tetris AI — Phase 7: Dual-Worker Hold + 2-Step Lookahead
 
 Zero object instantiation in the search loop. All placement evaluation
 uses pure integer math via TetrisCore. The only Pygame usage is in
 update() for timing (get_ticks) and executing moves on the real piece.
 
-Key changes from Phase 2:
-  - Deleted _clone_tetromino — no class instantiation in the hot path
-  - Virtual math: raw index-checking on the integer board
-  - No-copy heuristics: virtual_coords treated as occupied without grid copy
-  - Reachability: vertical scan ensures the AI can actually reach placements
-  - All 4 rotation states evaluated (except O = 1)
-  - Lookahead uses TetrisCore.lock_piece + clear_lines (with line clearing!)
-  - Performance: pre-fetched block coords, module-level constants, batch eval
+Key changes from Phase 6:
+  - Dual-worker architecture: Worker A = play current, Worker B = hold & play held
+  - 2-step lookahead: current → next → next-next
+  - Hold decision: compares play vs. hold branch scores, picks higher
+  - SYNC fallback with hold awareness (no external workers needed)
 """
 
 import os
@@ -24,7 +21,7 @@ from Tetris.settings import ROWS, COLUMNS
 # Ensure AI/ is importable when run from different entry points.
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from evaluator import find_best_move
+from evaluator import find_best_move, find_best_move_with_hold
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +36,7 @@ class TetrisAI:
     all board logic to TetrisCore static methods.
     """
 
-    def __init__(self, game, async_pipe=None):
+    def __init__(self, game, play_pipe=None, hold_pipe=None, **kwargs):
         self.game = game
         self.last_action_time = 0
         self.delay = 60
@@ -48,27 +45,33 @@ class TetrisAI:
         self._cached_move = None
         self._cached_piece_id = None
 
-        # ---- Async mode (Phase 6) ----
-        self._async_pipe = async_pipe    # parent_conn from multiprocessing.Pipe
-        self._piece_id_counter = 0       # Monotonic piece ID
-        self._pending_piece_id = None    # ID of the piece we're waiting on
-        self._last_sent_piece_id = None  # ID of current piece we sent to worker
+        # ---- Dual-worker pipes (Phase 7) ----
+        self._play_pipe = play_pipe      # Worker A: play current
+        self._hold_pipe = hold_pipe      # Worker B: hold & play held
+        self._piece_id_counter = 0
+        self._pending_piece_id = None
+        self._last_sent_piece_id = None
 
-        # ---- Heuristic weights (re-tuned for corrected fills_well sign) ----
-        # After Phase 3 fills_well fix, fills_well is now a REWARD (subtracted from cost).
-        # Old weights were tuned when fills_well was a penalty — these are adjusted.
-        self._w_agg_height = 3.5      # Was 1.275 — increased to penalize stacking higher
-        self._w_holes = 6.0           # Was 4.0 — increased to strongly avoid holes
-        self._w_blockades = 1.5       # Was 1.2 — slightly increased
-        self._w_bumpiness = 1.5       # Was 0.8 — increased to keep surface flat
-        self._w_almost_full = 0.8     # Was 0.5 — increased reward for almost-full rows
-        self._w_fills_well = 1.5      # Was 3.0 — reduced to avoid over-aggressive well play
-        self._clear_bonus = {4: 20, 3: 8, 2: 4, 1: 2}  # Was {4:20,3:5,2:2,1:0.1} — boosted small clears
+        # Store results from each worker
+        self._play_result = None         # (rot, x, score) from Worker A
+        self._hold_result = None         # (rot, x, score) from Worker B
+
+        # ---- Heuristic weights (proven working values) ----
+        # These are the original weights that produced good AI play.
+        # After the Phase 3 fills_well sign fix, w[5]=3.0 now correctly
+        # REWARDS well-filling (was accidentally penalizing before).
+        self._w_agg_height = 1.275
+        self._w_holes = 4.0
+        self._w_blockades = 1.2
+        self._w_bumpiness = 0.8
+        self._w_almost_full = 0.5
+        self._w_fills_well = 3.0
+        self._clear_bonus = {4: 20, 3: 5, 2: 2, 1: 0.1}
 
     # ------------------------------------------------------------------
     # Public entry point — called once per frame by Game.run()
     # ------------------------------------------------------------------
-    def update(self, next_shape):
+    def update(self, next_shape, held_piece=None, is_held=False):
         if self.game.is_game_over or not self.game.tetromino or not next_shape:
             return
 
@@ -80,13 +83,16 @@ class TetrisAI:
         current_px = int(tetromino.pivot.x)
         piece_id = id(tetromino)
 
-        # ---- ASYNC MODE (Phase 6) ----
-        if self._async_pipe is not None:
-            self._update_async(tetromino, shape, current_rot, current_px, 
-                               piece_id, next_shape, now)
+        # ---- ASYNC DUAL-WORKER MODE (Phase 7) ----
+        if self._play_pipe is not None:
+            self._update_dual_async(
+                tetromino, shape, current_rot, current_px,
+                piece_id, next_shape,
+                held_piece, is_held, now
+            )
             return
 
-        # ---- SYNC MODE (original, unchanged) ----
+        # ---- SYNC MODE (fallback — uses hold-aware 1-step) ----
         if now - self.last_action_time < self.delay:
             return
         if piece_id != self._cached_piece_id:
@@ -94,64 +100,129 @@ class TetrisAI:
                 [1 if self.game.game_data[r][c] else 0 for c in range(COLUMNS)]
                 for r in range(ROWS)
             ]
-            result = self._find_best_move(grid, shape, current_rot, next_shape)
+            weights = self._get_weights()
+            result = find_best_move_with_hold(
+                grid, shape, next_shape, held_piece, is_held, weights
+            )
             if result is None:
                 self._cached_piece_id = piece_id
                 self._cached_move = None
                 return
-            self._cached_move = result
+            self._cached_move = result    # (rot, x, should_hold)
             self._cached_piece_id = piece_id
 
         if self._cached_move is None:
             return
 
-        best_rot, best_x = self._cached_move
+        best_rot, best_x, should_hold = self._cached_move
+
+        if should_hold:
+            self.game.hold_piece()
+            self._cached_piece_id = None     # Force re-evaluation after hold
+            self._cached_move = None
+            return
+
         self._execute_move(tetromino, best_rot, best_x, current_rot, current_px, now)
 
-    def _update_async(self, tetromino, shape, current_rot, current_px,
-                      piece_id, next_shape, now):
-        """Async update: send state to worker, poll for results."""
-        
-        # ---- Send new piece state to worker if piece changed ----
+    # ------------------------------------------------------------------
+    # Dual-worker async mode
+    # ------------------------------------------------------------------
+    def _update_dual_async(self, tetromino, shape, current_rot, current_px,
+                           piece_id, next_shape,
+                           held_piece, is_held, now):
+        """
+        Dual-worker async: send current board to BOTH workers simultaneously.
+        Worker A evaluates "play current piece" with 1-step lookahead.
+        Worker B evaluates "hold & play held piece" with 1-step lookahead.
+        Main process picks whichever branch scores higher.
+        """
+
+        # ---- Send to both workers when piece changes ----
         if piece_id != self._last_sent_piece_id:
             self._piece_id_counter += 1
             self._last_sent_piece_id = piece_id
             self._pending_piece_id = self._piece_id_counter
             self._cached_move = None
+            self._play_result = None
+            self._hold_result = None
 
-            # Convert game_data to integer grid as tuple-of-tuples
             grid_tuple = tuple(
                 tuple(1 if self.game.game_data[r][c] else 0 for c in range(COLUMNS))
                 for r in range(ROWS)
             )
-            self._async_pipe.send(
+
+            # Worker A: evaluate playing the CURRENT piece
+            self._play_pipe.send(
                 (self._piece_id_counter, grid_tuple, shape, next_shape)
             )
 
-        # ---- Poll for result (non-blocking) ----
-        while self._async_pipe.poll():
-            recv_id, best_rot, best_x = self._async_pipe.recv()
-            
-            # Stale check: discard if piece has changed since we sent
-            if recv_id == self._pending_piece_id:
-                if best_rot is not None:
-                    self._cached_move = (best_rot, best_x)
+            # Worker B: evaluate holding and playing the HELD piece
+            # Only send if hold is available this turn
+            if not is_held and self._hold_pipe is not None:
+                if held_piece is not None:
+                    # Swap: play held_piece, lookahead with next_shape
+                    self._hold_pipe.send(
+                        (self._piece_id_counter, grid_tuple, held_piece,
+                         next_shape)
+                    )
                 else:
-                    self._cached_move = None
+                    # First hold ever: play next_shape, no lookahead piece known
+                    self._hold_pipe.send(
+                        (self._piece_id_counter, grid_tuple, next_shape,
+                         None)
+                    )
 
-        # ---- Execute cached move ----
-        if self._cached_move is not None:
-            best_rot, best_x = self._cached_move
-            
-            rot_needed = (best_rot - current_rot) % 4
-            dx_needed = best_x - current_px
-            
-            # Only delay the hard drop. Execute shifts and rotations instantly so gravity doesn't ruin the trajectory.
-            if rot_needed == 0 and dx_needed == 0:
-                if now - self.last_action_time < self.delay:
-                    return
-                    
-            self._execute_move(tetromino, best_rot, best_x, current_rot, current_px, now)
+        # ---- Poll Worker A (play) ----
+        while self._play_pipe.poll():
+            recv_id, rot, x, score = self._play_pipe.recv()
+            if recv_id == self._pending_piece_id:
+                self._play_result = (rot, x, score) if rot is not None else None
+
+        # ---- Poll Worker B (hold) ----
+        if self._hold_pipe is not None:
+            while self._hold_pipe.poll():
+                recv_id, rot, x, score = self._hold_pipe.recv()
+                if recv_id == self._pending_piece_id:
+                    self._hold_result = (rot, x, score) if rot is not None else None
+
+        # ---- Decide: play or hold? ----
+        # Wait until at least Worker A has responded
+        if self._play_result is None and self._hold_result is None:
+            return    # Still waiting
+
+        play_score = self._play_result[2] if self._play_result else float("-inf")
+        hold_score = self._hold_result[2] if self._hold_result else float("-inf")
+
+        if hold_score > play_score and self._hold_result is not None:
+            # Hold is better — swap and re-evaluate will happen next frame
+            best_rot, best_x = self._hold_result[0], self._hold_result[1]
+            self._cached_move = (best_rot, best_x, True)    # should_hold = True
+        elif self._play_result is not None:
+            best_rot, best_x = self._play_result[0], self._play_result[1]
+            self._cached_move = (best_rot, best_x, False)   # should_hold = False
+        else:
+            return
+
+        # ---- Execute ----
+        best_rot, best_x, should_hold = self._cached_move
+
+        if should_hold:
+            self.game.hold_piece()
+            self._cached_piece_id = None     # Force re-evaluation after hold
+            self._cached_move = None
+            self._play_result = None
+            self._hold_result = None
+            return
+
+        rot_needed = (best_rot - current_rot) % 4
+        dx_needed = best_x - current_px
+
+        # Only delay the hard drop (same as before)
+        if rot_needed == 0 and dx_needed == 0:
+            if now - self.last_action_time < self.delay:
+                return
+
+        self._execute_move(tetromino, best_rot, best_x, current_rot, current_px, now)
 
     def _execute_move(self, tetromino, best_rot, best_x, current_rot, current_px, now):
         """Execute a computed move on the real tetromino."""
@@ -180,11 +251,11 @@ class TetrisAI:
         self.last_action_time = now
 
     # ------------------------------------------------------------------
-    # Core search — pure integer, zero Pygame, zero object instantiation
+    # Helpers
     # ------------------------------------------------------------------
-    def _find_best_move(self, grid, shape, current_rot, next_shape):
-        """Delegate move search to shared evaluator."""
-        weights = [
+    def _get_weights(self):
+        """Build weights list from instance attributes."""
+        return [
             self._w_agg_height,
             self._w_holes,
             self._w_blockades,
@@ -196,7 +267,10 @@ class TetrisAI:
             self._clear_bonus.get(2, 0),
             self._clear_bonus.get(1, 0),
         ]
-        return find_best_move(grid, shape, next_shape, weights)
+
+    def _find_best_move(self, grid, shape, current_rot, next_shape):
+        """Delegate move search to shared evaluator (legacy)."""
+        return find_best_move(grid, shape, next_shape, self._get_weights())
 
 
 # ---------------------------------------------------------------------------

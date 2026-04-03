@@ -7,8 +7,9 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 ## Overview
 
 - **AI Type**: Heuristic-based using weighted board evaluation (zero object instantiation — pure integer math)  
+- **Architecture**: **Dual-Worker Parallel System** (evaluates "Play" vs "Hold" branches simultaneously)
 - **Optimization**: Genetic Algorithm (selection, crossover, mutation)  
-- **Lookahead**: One-step lookahead (current + next tetromino)  
+- **Lookahead**: **Hold-aware one-step lookahead** (compares best placement of current piece vs best placement of held piece, each with its own 1-step lookahead)
 - **Engine**: Custom Pygame Tetris engine with headless `TetrisCore` logic layer (zero Pygame dependency)  
 - **Parallel Training**: Multi-tray evaluation using multiprocessing  
 - **Evaluation**: Based on score, lines, survival time, and average move quality  
@@ -18,14 +19,14 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 ```text
 Tetris-Project/
 ├── AI/
-│   ├── evaluator.py            # Shared heuristic evaluator (used by runtime AI, worker, and GA AI)
-│   ├── worker.py               # Async AI worker process (delegates to shared evaluator)
-│   ├── TetrisAI.py             # Runtime AI controller (delegates move search to shared evaluator)
+│   ├── evaluator.py            # Shared heuristic evaluator (1-step search, feature extraction)
+│   ├── worker.py               # Parallel AI worker (handles a single branch of the search)
+│   ├── TetrisAI.py             # Dual-worker controller (manages PLAY/HOLD pipes and move execution)
 │   └── GA/
 │       ├── genetic_algorithm.py # GA evolution logic
 │       ├── optimize.py          # GA training pipeline
-│       ├── tetris_ai.py         # GA agent wrapper (delegates move search to shared evaluator)
-│       └── gauntlet.py          # Gauntlet comparison of top agents
+│       ├── tetris_ai.py         # Dual-worker GA agent (matches runtime architecture)
+│       └── gauntlet.py          # Tournament comparison with auto-versioned results
 ├── notebooks/
 │   ├── agent_analysis.ipynb
 │   ├── extract_agent.ipynb
@@ -80,7 +81,7 @@ python AI/GA/gauntlet.py
 
 ## Cost Function Features
 
-The AI evaluates every possible placement of the current tetromino, using one-step lookahead, with a linear cost function made up of these board features:
+The AI evaluates every possible placement for BOTH the current tetromino and the held tetromino (if available), using one-step lookahead for each branch:
 
 - Aggregate Height
 - Number of Holes
@@ -155,8 +156,10 @@ For detailed information about updates, improvements, and version history, see t
 | Phase 3 (Part 1) | 2026-03-28 | `AI/evaluator.py` | **fills_well Sign Correction** — Flipped the `fills_well` term in the shared cost function so well-filling is rewarded instead of penalized. Existing GA checkpoints were trained under inverted semantics and should be retrained. |
 | Phase 4 (Part 1) | 2026-03-28 | `Tetris/main.py`, `AI/GA/optimize.py`, `AI/GA/gauntlet.py` | **Worker Lifecycle Cleanup** — Added `close()` and context manager to `Main`; GA trays and gauntlet games now explicitly clean up worker processes after each game finishes. |
 | Phase 5 (Part 1) | 2026-03-28 | `AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py` | **GA Fitness Overhaul** — Redesigned fitness to reward efficiency, Tetris dominance, sqrt survival, and tiered death penalties. Training timeout increased to 600s. |
+| Phase 6 (Part 1) | 2026-04-03 | `AI/GA/gauntlet.py` | **Gauntlet Cleanup** — Implemented auto-versioning for result folders, fixed timeout comments, and ensured redundant worker processes are shut down after every match. |
+| Phase 1 (Part 2) | 2026-04-03 | `AI/TetrisAI.py`, `AI/worker.py`, `AI/evaluator.py`, `Tetris/game.py` | **Hold-Aware Dual-Worker Architecture** — Added parallel evaluation of PLAY/HOLD branches using two async workers. Replaced 2-step lookahead (too slow) with hold-aware 1-step search for real-time responsiveness. |
+| Weight Re-tune | 2026-04-03 | `AI/TetrisAI.py`, `AI/worker.py` | **Baseline Revert** — Restored proven-stable heuristic weights to resolve premature AI death caused by experimental weights. |
 | GA Overhaul | 2026-03-28 | `AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py` | **GA Engine Overhaul** — Population scaled to 50 with elite=4, stagnation detection with adaptive mutation surge, diversity injection when pop converges, median-of-trays fitness, self-crossover prevention, weight bounds [0,30], seeded initialization, and enhanced checkpoint migration. |
-| Weight Re-tune | 2026-03-28 | `AI/TetrisAI.py`, `AI/worker.py`, `AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py` | **Default Weight Re-tuning & Fitness v2** — Re-tuned default weights for corrected `fills_well` sign, boosted small-clear bonuses. Fitness v2: 8-component with efficiency gate, Tetris rate bonus, consistency gate, stronger death penalty. |
 
 ---
 

@@ -105,7 +105,7 @@ class GA:
 
         Args:
             seed_weights: Optional list of weight vectors to include in gen 0.
-                          Remaining slots are filled with random weights.
+                        Remaining slots are filled with random weights.
         """
         self.population = []
 
@@ -119,18 +119,18 @@ class GA:
 
         seeded = len(seed_weights) if seed_weights else 0
         print(f"[GA] Population initialized: {len(self.population)} agents "
-              f"({seeded} seeded, {self.population_size - seeded} random)")
+            f"({seeded} seeded, {self.population_size - seeded} random)")
 
     def evaluate_agent_fitness(self, lines, score, time_sec, num_tetris, max_time=600):
         """
         8-component fitness function — designed for high-quality weight discovery.
 
         Key improvements over v1:
-          - Efficiency reward is GATED behind 60s survival (no "lucky fast death" inflation)
-          - Tetris RATE bonus rewards proportion of lines via Tetrises
-          - Progressive line reward with diminishing returns past 200 lines
-          - Stronger death penalty (3-tier) to prevent glass cannon local optima
-          - Consistency bonus for agents that achieve real results (100+ lines)
+        - Efficiency reward is GATED behind 60s survival (no "lucky fast death" inflation)
+        - Tetris RATE bonus rewards proportion of lines via Tetrises
+        - Progressive line reward with diminishing returns past 200 lines
+        - Stronger death penalty (3-tier) to prevent glass cannon local optima
+        - Consistency bonus for agents that achieve real results (100+ lines)
         """
 
         # ================================================================

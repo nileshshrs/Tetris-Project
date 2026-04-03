@@ -200,8 +200,8 @@ if __name__ == '__main__':
         print(f"\n========================")
         print(f"===> [MAIN] Generation {generation} starting...")
         print(f"  (mutation_rate={params['mutation_rate']:.3f}, mutation_scale={params['mutation_scale']:.3f}, "
-              f"creep_scale={params['creep_scale']:.3f}, blend_prob={params['blend_prob']:.3f}, "
-              f"uniform_chance={params['uniform_chance']:.3f}, creep_chance={params['creep_chance']:.3f})")
+            f"creep_scale={params['creep_scale']:.3f}, blend_prob={params['blend_prob']:.3f}, "
+            f"uniform_chance={params['uniform_chance']:.3f}, creep_chance={params['creep_chance']:.3f})")
         t0 = time.time()
         result_queue = multiprocessing.Queue()
         procs = []
