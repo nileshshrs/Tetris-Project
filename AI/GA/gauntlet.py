@@ -1,20 +1,47 @@
-import os
-import datetime
-os.environ["SDL_VIDEODRIVER"] = "dummy"
+"""
+Gauntlet - benchmark agents on identical seeded games (headless simulator).
 
-import pygame
-import time
-import sys
-import numpy as np
+Every agent plays the SAME games (game k uses seed base+k for all agents), so
+differences between agents come from the weights, not from piece-sequence
+luck, and the comparison can be paired. Games run in parallel worker
+processes with no Pygame display and no real time; "TimeSurvived" is virtual
+game time (pieces * --ai-delay ms), see AI/GA/simulator.py.
+
+The BASELINE agent (the hand-tuned default weights, same as in optimize.py) is
+always included and is the reference for the paired comparison in the summary.
+
+Usage:
+    python AI/GA/gauntlet.py --from-run run_6         # test the best candidates of a GA run (+ baseline)
+    python AI/GA/gauntlet.py --from-run run_6 --top 8 # more candidates
+    python AI/GA/gauntlet.py --set agent_weights_5    # a weight set defined below (+ baseline)
+    python AI/GA/gauntlet.py                          # the `final_run` set (+ baseline)
+    python AI/GA/gauntlet.py --games 5 --max-time 20  # quick test
+
+--from-run takes the rows of results/GA/<run>/ga_log.csv (the best agent of each
+generation) with the highest BestFitness, plus the last generation's best. Those scores
+come from noisy generations, so this is the step that picks the real winner on fresh seeds.
+
+Results go to results/gauntlet/run_<N>/results_<agent>.csv with the columns the
+notebooks expect (AgentName, GameNumber, Score, NumTetrises, Num3Line, Num2Line,
+Num1Line, TimeSurvived, TotalLinesCleared, CurrentLevel), plus Seed, Pieces, Died.
+"""
+
+import argparse
 import csv
+import json
 import multiprocessing
+import os
+import re
+import sys
+import time
 
-pygame.init()
-pygame.display.set_mode((1, 1))
+import numpy as np
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Tetris')))
-from main import Main
-# Tetrominos and TetrisAI are already handled by Main/Game for your setup
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from simulator import play_job
+from optimize import BASELINE_WEIGHTS   # single source of truth for the baseline agent
+
+BASELINE_NAME = "baseline"
 
 # --- AGENT WEIGHTS CONFIG ---
 # GA run 1
@@ -139,85 +166,206 @@ final_run = {
     4.505426234452847, 6.60584610827727, 6.383616521399759,
     10.29353896728732]),
 'm1': np.array([1.275, 4.0, 1.2, 0.8, 0.5, 3.0, 20, 5, 2, 0.1]),
-} 
+}
 
-agent_weights_dict = final_run
+# Weight sets that can be selected with --set
+SETS = {
+    "agent_weights_1": agent_weights_1,
+    "agent_weights_2": agent_weights_2,
+    "agent_weights_3": agent_weights_3,
+    "agent_weights_4": agent_weights_4,
+    "agent_weights_5": agent_weights_5,
+    "trial_weights": trial_weights,
+    "final_run": final_run,
+}
 
-agent_names = list(agent_weights_dict.keys())
-agent_weights_list = [agent_weights_dict[name] for name in agent_names]
+RESULTS_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'results', 'gauntlet')
+GA_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'results', 'GA')
 
-N_AGENTS = 2  # Max parallel agent processes (not total agent count — all agents always run)
-GAMES_PER_AGENT = 20
-TIMEOUT_SECONDS = 600  # 10 minutes per game
-# Auto-version: create a timestamped run folder
-run_id = datetime.datetime.now().strftime("run_%Y%m%d_%H%M%S")
-misc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'results', 'gauntlet', run_id)
-os.makedirs(misc_dir, exist_ok=True)
+CSV_HEADER = [
+    "AgentName", "GameNumber", "Score", "NumTetrises", "Num3Line", "Num2Line", "Num1Line",
+    "TimeSurvived", "TotalLinesCleared", "CurrentLevel", "Seed", "Pieces", "Died",
+]
 
-def run_agent(agent_name, agent_weights, num_games, timeout_sec):
-    import pygame
-    pygame.init()
-    pygame.display.set_mode((1, 1))
-
-    csv_path = os.path.join(misc_dir, f"results_{agent_name}.csv")
-    write_header = not os.path.exists(csv_path) or os.stat(csv_path).st_size == 0
-    with open(csv_path, "a", newline="") as f:
-        writer = csv.writer(f)
-        if write_header:
-            writer.writerow([
-                "AgentName", "GameNumber", "Score", "NumTetrises", "Num3Line", "Num2Line", "Num1Line", "TimeSurvived", "TotalLinesCleared", "CurrentLevel"
-            ])
-        from AI.GA.tetris_ai import TetrisAI as GATetrisAI
-        
-        for game_num in range(num_games):
-            try:
-                print(f"[START] Agent {agent_name}, Game {game_num+1}")
-                g = Main(use_async_ai=True, ai_class=GATetrisAI,
-                         ai_kwargs={'weights': agent_weights})
-                start_time = time.time()
-                while not g.game.is_game_over:
-                    elapsed = time.time() - start_time
-                    if elapsed > timeout_sec:
-                        g.game.is_game_over = True
-                        break
-                    g.game.run()
-                time_survived = getattr(g.score, "frozen_time", None)
-                if time_survived is None:
-                    time_survived = int(time.time() - start_time)
-                total_lines = getattr(g.lines, "lines", 0)
-                current_level = getattr(g.score, "levels", 1)
-                writer.writerow([
-                    agent_name,
-                    game_num + 1,
-                    getattr(g.score, "score", 0),
-                    getattr(g.game, "num_tetris", 0),
-                    getattr(g.game, "num_3line", 0),
-                    getattr(g.game, "num_2line", 0),
-                    getattr(g.game, "num_1line", 0),
-                    time_survived,
-                    total_lines,
-                    current_level
-                ])
-                f.flush()  # Ensure data is written immediately
-                print(f"[END]   Agent {agent_name}, Game {game_num+1}")
-                g.close()    # Clean up worker process
-            except Exception as e:
-                print(f"Exception in agent {agent_name}, game {game_num+1}: {e}")
-                import traceback
-                traceback.print_exc()
-                break  # Stop further games for this agent on error
+# One row per agent. VsRef* = paired difference in score against the reference agent
+# (same seeds), empty for the reference itself.
+SUMMARY_HEADER = [
+    "AgentName", "IsReference", "Games", "MeanScore", "SemScore", "MedianScore",
+    "MeanLines", "MeanTetrises", "Deaths", "VsRefMeanDiff", "VsRefSemDiff", "VsRefBetterIn",
+]
 
 
-def run_agent_wrapper(args):
-    return run_agent(*args)
+def parse_args():
+    ap = argparse.ArgumentParser(description="Benchmark agents on identical seeded simulator games.")
+    ap.add_argument("--set", dest="agent_set", default=None, choices=sorted(SETS),
+                    help="which weight set (dict above) to benchmark (default: final_run)")
+    ap.add_argument("--from-run", dest="from_run", default=None,
+                    help="GA run folder name (e.g. run_6): benchmark its best candidates from ga_log.csv")
+    ap.add_argument("--top", type=int, default=5, help="with --from-run: how many top candidates to take")
+    ap.add_argument("--ga-out", type=str, default=GA_ROOT, help="folder that holds the GA run_N folders")
+    ap.add_argument("--no-baseline", action="store_true",
+                    help="don't add the baseline agent (the first agent becomes the reference)")
+    ap.add_argument("--games", type=int, default=20, help="games per agent")
+    ap.add_argument("--max-time", type=float, default=130.0,
+                    help="game-time budget per game in virtual seconds (pieces = max_time / ai_delay)")
+    ap.add_argument("--ai-delay", type=int, default=130, help="game time in ms charged per piece")
+    ap.add_argument("--seed", type=int, default=1_000_000,
+                    help="base seed (kept away from the GA's training seeds)")
+    ap.add_argument("--workers", type=int, default=0, help="worker processes (0 = all cores)")
+    ap.add_argument("--out", type=str, default=RESULTS_ROOT, help="folder that holds run_N folders")
+    return ap.parse_args()
+
+
+def next_run_dir(root):
+    os.makedirs(root, exist_ok=True)
+    nums = [int(m.group(1)) for d in os.listdir(root) if (m := re.fullmatch(r"run_(\d+)", d))]
+    path = os.path.abspath(os.path.join(root, f"run_{max(nums, default=0) + 1}"))
+    os.makedirs(path)
+    return path
+
+
+def candidates_from_run(run_name, top, ga_root):
+    """
+    Best-of-generation agents from a GA run's ga_log.csv: the `top` rows with the highest
+    BestFitness (distinct weights only), plus the last generation's best.
+    Returns {name: [10 weights]}.
+    """
+    path = os.path.abspath(os.path.join(ga_root, run_name, "ga_log.csv"))
+    if not os.path.exists(path):
+        sys.exit(f"GA log not found: {path}")
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        w_cols = [c for c in reader.fieldnames if re.fullmatch(r"W\d+:.*", c)]
+        rows = [r for r in reader if r.get("BestFitness") not in (None, "")]
+    if not rows or not w_cols:
+        sys.exit(f"No usable rows/weight columns in {path}")
+
+    picked = sorted(rows, key=lambda r: float(r["BestFitness"]), reverse=True)[:top]
+    last = max(rows, key=lambda r: int(r["Generation"]))
+    if last not in picked:
+        picked.append(last)
+
+    agents, seen = {}, set()
+    for r in picked:
+        w = tuple(round(float(r[c]), 12) for c in w_cols)
+        if w in seen:
+            continue
+        seen.add(w)
+        agents[f"{run_name}_g{int(r['Generation'])}"] = list(w)
+    return agents
+
+
+def build_agents(args):
+    """Returns (names, weights, reference_index, description)."""
+    if args.from_run:
+        agents = candidates_from_run(args.from_run, args.top, args.ga_out)
+        desc = f"candidates from {args.from_run} (top {args.top} by BestFitness + last generation)"
+    else:
+        set_name = args.agent_set or "final_run"
+        agents = {n: [float(x) for x in w] for n, w in SETS[set_name].items()}
+        desc = f"set {set_name}"
+
+    names = list(agents)
+    weights = [[float(x) for x in agents[n]] for n in names]
+
+    ref = None
+    if not args.no_baseline:
+        # If an agent already has the baseline weights (e.g. 'm1' in final_run), it IS the reference.
+        for i, w in enumerate(weights):
+            if len(w) == len(BASELINE_WEIGHTS) and all(abs(a - b) < 1e-12 for a, b in zip(w, BASELINE_WEIGHTS)):
+                ref = i
+                break
+        if ref is None:
+            names.insert(0, BASELINE_NAME)
+            weights.insert(0, [float(x) for x in BASELINE_WEIGHTS])
+            ref = 0
+    else:
+        ref = 0
+    return names, weights, ref, desc
+
+
+def main():
+    args = parse_args()
+    workers = args.workers or os.cpu_count() or 1
+    names, weights, ref_idx, desc = build_agents(args)
+    max_pieces = int(args.max_time * 1000 / args.ai_delay)
+    seeds = [args.seed + k for k in range(args.games)]
+
+    run_dir = next_run_dir(args.out)
+    print(f"[gauntlet] {desc} | reference agent: {names[ref_idx]}")
+    print(f"[gauntlet] agents={names} games={args.games} "
+          f"budget={args.max_time:g}s @ {args.ai_delay}ms/piece = {max_pieces} pieces workers={workers}")
+    print(f"[gauntlet] results -> {run_dir}")
+
+    # Record exactly what was tested (weights included), so the run can be reproduced
+    # and --from-run candidates can be traced back later.
+    with open(os.path.join(run_dir, "config.json"), "w") as f:
+        json.dump({
+            "args": vars(args),
+            "source": desc,
+            "reference": names[ref_idx],
+            "max_pieces": max_pieces,
+            "seeds": seeds,
+            "agents": dict(zip(names, weights)),
+        }, f, indent=2)
+
+    jobs = [(a, k, weights[a], seeds[k], max_pieces, args.ai_delay)
+            for a in range(len(names)) for k in range(args.games)]
+    results = [[None] * args.games for _ in names]
+
+    t0 = time.time()
+    done = 0
+    with multiprocessing.Pool(workers) as pool:
+        for a, k, res in pool.imap_unordered(play_job, jobs, chunksize=1):
+            results[a][k] = res
+            done += 1
+            if done % max(1, len(jobs) // 10) == 0:
+                print(f"    {done}/{len(jobs)} games done ({time.time() - t0:.0f}s)")
+
+    for a, name in enumerate(names):
+        with open(os.path.join(run_dir, f"results_{name}.csv"), "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(CSV_HEADER)
+            for k, r in enumerate(results[a]):
+                w.writerow([name, k + 1, r["score"], r["num_tetris"], r["num_3line"], r["num_2line"],
+                            r["num_1line"], round(r["time_s"], 2), r["lines"], 1,
+                            seeds[k], r["pieces"], int(r["topped_out"])])
+
+    # ---- summary ----
+    ref = np.array([r["score"] for r in results[ref_idx]], dtype=float)
+    width = max(10, max(len(n) for n in names) + 2)
+    print(f"\n{'agent':<{width}}{'score mean':>12}{'+-sem':>8}{'median':>9}{'lines':>8}{'tetris':>8}"
+          f"{'died':>8}   vs {names[ref_idx]} (paired, per seed)")
+    summary_rows = []
+    for a, name in enumerate(names):
+        sc = np.array([r["score"] for r in results[a]], dtype=float)
+        sem = sc.std(ddof=1) / np.sqrt(len(sc)) if len(sc) > 1 else 0.0
+        lines = np.mean([r["lines"] for r in results[a]])
+        tet = np.mean([r["num_tetris"] for r in results[a]])
+        died = sum(r["topped_out"] for r in results[a])
+        diff_mean = diff_sem = better = None
+        if a == ref_idx or len(sc) < 2:
+            paired = "(reference)" if a == ref_idx else "-"
+        else:
+            d = sc - ref
+            diff_mean, diff_sem, better = d.mean(), d.std(ddof=1) / np.sqrt(len(d)), int((d > 0).sum())
+            paired = f"{diff_mean:+.0f} +- {diff_sem:.0f}  (better in {better}/{len(d)})"
+        print(f"{name:<{width}}{sc.mean():>12.0f}{sem:>8.0f}{np.median(sc):>9.0f}{lines:>8.0f}{tet:>8.1f}"
+              f"{died:>5}/{args.games:<2}   {paired}")
+        summary_rows.append([
+            name, int(a == ref_idx), len(sc), round(sc.mean(), 2), round(sem, 2), float(np.median(sc)),
+            round(float(lines), 2), round(float(tet), 3), died,
+            "" if diff_mean is None else round(diff_mean, 2),
+            "" if diff_sem is None else round(diff_sem, 2),
+            "" if better is None else better,
+        ])
+
+    with open(os.path.join(run_dir, "summary.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(SUMMARY_HEADER)
+        w.writerows(summary_rows)
+
 
 if __name__ == "__main__":
-    jobs = []
-    for name, weights in zip(agent_names, agent_weights_list):
-        jobs.append((name, weights, GAMES_PER_AGENT, TIMEOUT_SECONDS))
-    max_parallel = N_AGENTS
-
-    with multiprocessing.Pool(max_parallel) as pool:
-        pool.map(run_agent_wrapper, jobs)
-
-pygame.quit()
+    multiprocessing.freeze_support()
+    main()

@@ -3,7 +3,6 @@ import random
 import pandas as pd
 import pickle
 import os
-import math
 
 class GA:
     def __init__(
@@ -68,7 +67,12 @@ class GA:
         Track best fitness and detect stagnation.
         Returns True if mutation surge is active.
         """
-        improvement_threshold = 0.5  # Minimum improvement to count as progress
+        # Minimum improvement to count as progress: 1% of best-so-far (fitness is
+        # score-based, so an absolute threshold would be meaningless).
+        if self.best_ever_fitness == float('-inf'):
+            improvement_threshold = 0.5
+        else:
+            improvement_threshold = max(0.5, 0.01 * abs(self.best_ever_fitness))
 
         self.best_fitness_history.append(current_best_fitness)
 
@@ -121,116 +125,32 @@ class GA:
         print(f"[GA] Population initialized: {len(self.population)} agents "
             f"({seeded} seeded, {self.population_size - seeded} random)")
 
-    def evaluate_agent_fitness(self, lines, score, time_sec, num_tetris, max_time=600):
+    # ------------------------------------------------------------------
+    # Fitness (v3)
+    # ------------------------------------------------------------------
+    # Agents play several seeded games in the headless simulator, each capped
+    # at a fixed number of pieces. In that setting almost every reasonable
+    # weight vector survives the cap and clears ~0.4 lines/piece (the maximum),
+    # so lines cannot rank agents. The game's own score can: it pays far more
+    # for multi-line clears (1/2/3/4 lines = 40/100/300/1200), and dying early
+    # simply stops the score from growing. No hand-made bonuses or penalties.
+    PIECE_TIEBREAK = 1.0    # tiny per-piece credit so agents that score 0 still rank by survival
+
+    @staticmethod
+    def game_fitness(score, pieces):
+        """Fitness of a single game."""
+        return score + GA.PIECE_TIEBREAK * pieces
+
+    def evaluate_agent_fitness(self, scores, pieces):
         """
-        8-component fitness function — designed for high-quality weight discovery.
+        Fitness of one agent = mean game fitness over its games.
 
-        Key improvements over v1:
-        - Efficiency reward is GATED behind 60s survival (no "lucky fast death" inflation)
-        - Tetris RATE bonus rewards proportion of lines via Tetrises
-        - Progressive line reward with diminishing returns past 200 lines
-        - Stronger death penalty (3-tier) to prevent glass cannon local optima
-        - Consistency bonus for agents that achieve real results (100+ lines)
+        Args:
+            scores: list of final game scores (one per game)
+            pieces: list of pieces placed (one per game)
         """
-
-        # ================================================================
-        # COMPONENT 1: Lines cleared (progressive, diminishing past 200)
-        # First 200 lines = 1.0 per line. Lines 200+ = 0.5 per line.
-        # This prevents "just survive forever" from dominating via raw lines.
-        # ================================================================
-        if lines <= 200:
-            line_score = 1.0 * lines
-        else:
-            line_score = 200.0 + 0.5 * (lines - 200)
-
-        # ================================================================
-        # COMPONENT 2: Tetris dominance bonus (10x per Tetris)
-        # 1 Tetris = 4 lines = 4.0 (line_score) + 10.0 (bonus) = 14.0 total
-        # 4 singles = 4 lines = 4.0 (line_score) + 0.0 (bonus) = 4.0 total
-        # Tetris is 3.5x more valuable → strongly incentivizes well-building
-        # ================================================================
-        tetris_bonus = 10.0 * num_tetris
-
-        # ================================================================
-        # COMPONENT 3: Efficiency reward (GATED behind 60s survival)
-        # Only kicks in if agent survived 60+ seconds — prevents a lucky
-        # 20-line burst in 10s from getting efficiency = 360.
-        # After the gate, rewards lines/min with sqrt scaling to soften
-        # diminishing returns at very high rates.
-        # ================================================================
-        if time_sec >= 60:
-            time_minutes = time_sec / 60.0
-            lines_per_min = lines / time_minutes
-            efficiency_reward = 5.0 * math.sqrt(lines_per_min)
-        else:
-            efficiency_reward = 0
-
-        # ================================================================
-        # COMPONENT 4: Survival reward (sqrt for diminishing returns)
-        # sqrt(60) ≈ 7.7 → 15.5 fitness
-        # sqrt(600) ≈ 24.5 → 49.0 fitness
-        # First 60s is worth as much as next 240s — can't farm survival
-        # ================================================================
-        survival_reward = 2.0 * math.sqrt(time_sec)
-
-        # ================================================================
-        # COMPONENT 5: Score tiebreaker
-        # ================================================================
-        score_bonus = 0.008 * score
-
-        # ================================================================
-        # COMPONENT 6: Tetris RATE bonus
-        # Rewards agents where a HIGH PROPORTION of lines come from Tetrises.
-        # tetris_lines = num_tetris * 4. If 80%+ of lines are from Tetrises,
-        # the agent gets a big bonus. This teaches the GA to build efficient wells.
-        # Only activates if agent cleared 20+ lines (avoid division noise).
-        # ================================================================
-        tetris_rate_bonus = 0
-        if lines >= 20:
-            tetris_lines = num_tetris * 4
-            tetris_rate = tetris_lines / lines  # 0.0 to 1.0
-            tetris_rate_bonus = 15.0 * tetris_rate  # Max 15 bonus at 100% Tetris
-
-        # ================================================================
-        # COMPONENT 7: Death penalty (3-tier progressive)
-        # 70%+ survived: no penalty (agent showed enough)
-        # 30-70%: moderate penalty, scaling with wasted time
-        # <30%: harsh penalty — agent is terrible and should be eliminated
-        # ================================================================
-        fraction_survived = time_sec / max_time if max_time > 0 else 1.0
-
-        if fraction_survived >= 0.7:
-            death_penalty = 0
-        elif fraction_survived >= 0.3:
-            wasted = 0.7 - fraction_survived  # 0.0 to 0.4
-            death_penalty = wasted * 50.0     # 0 to 20
-        else:
-            wasted = 0.7 - fraction_survived  # 0.4 to 0.7
-            death_penalty = wasted * 50.0 + 20.0  # 40 to 55
-
-        # ================================================================
-        # COMPONENT 8: Consistency gate (bonus for 100+ lines)
-        # Agents that clear 100+ lines get a flat bonus as proof they can
-        # sustain a real strategy, not just a lucky opening.
-        # ================================================================
-        consistency_bonus = 0
-        if lines >= 100:
-            consistency_bonus = 10.0
-        if lines >= 250:
-            consistency_bonus = 25.0
-
-        fitness = (
-            line_score +
-            tetris_bonus +
-            efficiency_reward +
-            survival_reward +
-            score_bonus +
-            tetris_rate_bonus +
-            consistency_bonus -
-            death_penalty
-        )
-        return fitness
-
+        values = [self.game_fitness(s, p) for s, p in zip(scores, pieces)]
+        return float(np.mean(values))
 
     def reflect_bounds(self, w, minval=1e-4, maxval=30.0):
         new_w = []
@@ -314,13 +234,13 @@ class GA:
             for _ in range(inject_count):
                 new_population.append(self._random_weights())
 
-        # Adjust fitness for selection
+        # Adjust fitness for selection: shift so the worst agent sits just above
+        # zero. Fitness is a large score (thousands), and raw proportional
+        # selection on values that close together would be almost uniform.
         min_fit = min(fitnesses)
-        adj_fitnesses = fitnesses
-        if min_fit < 0:
-            adj_fitnesses = [f - min_fit + 1e-6 for f in fitnesses]
-        elif min_fit == 0 and all(f == 0 for f in fitnesses):
-            adj_fitnesses = [f + 1e-6 for f in fitnesses]
+        spread = max(fitnesses) - min_fit
+        eps = 0.05 * spread + 1e-6
+        adj_fitnesses = [f - min_fit + eps for f in fitnesses]
 
         total_fit = sum(adj_fitnesses)
         if total_fit == 0:

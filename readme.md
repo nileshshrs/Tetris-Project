@@ -6,35 +6,36 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 
 ## Overview
 
-- **AI Type**: Heuristic-based using weighted board evaluation (zero object instantiation — pure integer math)  
+- **AI Type**: Heuristic-based using weighted board evaluation (zero object instantiation — pure integer math, bit-board search)
 - **Architecture**: **Dual-Worker Parallel System** (evaluates "Play" vs "Hold" branches simultaneously)
-- **Optimization**: Genetic Algorithm (selection, crossover, mutation)  
+- **Optimization**: Genetic Algorithm (selection, crossover, mutation) with a hand-tuned **baseline agent** as a reference
 - **Lookahead**: **Hold-aware one-step lookahead** (compares best placement of current piece vs best placement of held piece, each with its own 1-step lookahead)
-- **Engine**: Custom Pygame Tetris engine with headless `TetrisCore` logic layer (zero Pygame dependency)  
-- **Parallel Training**: Multi-tray evaluation using multiprocessing  
-- **Evaluation**: Based on score, lines, survival time, and average move quality  
+- **Engine**: Custom Pygame Tetris engine with headless `TetrisCore` logic layer (zero Pygame dependency)
+- **Training / benchmarking**: a **headless simulator** (seeded pieces, piece cap, virtual clock) run in parallel worker processes — no window, no real-time waiting, results independent of machine load
+- **Fitness**: mean game score over several seeded games (multi-line clears score far more; dying early stops the score growing)
 
 ## Project Structure
 
 ```text
 Tetris-Project/
 ├── AI/
-│   ├── evaluator.py            # Shared heuristic evaluator (1-step search, feature extraction)
+│   ├── evaluator.py            # Shared heuristic evaluator: fast bit-board search (+ the slow reference version it is tested against)
 │   ├── worker.py               # Parallel AI worker (handles a single branch of the search)
 │   ├── TetrisAI.py             # Dual-worker controller (manages PLAY/HOLD pipes and move execution)
 │   └── GA/
-│       ├── genetic_algorithm.py # GA evolution logic
-│       ├── optimize.py          # GA training pipeline
+│       ├── genetic_algorithm.py # GA evolution logic + fitness
+│       ├── simulator.py         # Headless game simulator (seeded pieces, piece cap, virtual clock)
+│       ├── optimize.py          # GA training pipeline (uses the simulator)
 │       ├── tetris_ai.py         # Dual-worker GA agent (matches runtime architecture)
-│       └── gauntlet.py          # Tournament comparison with auto-versioned results
+│       └── gauntlet.py          # Benchmark: agents play identical seeded games, paired comparison vs baseline
 ├── notebooks/
 │   ├── agent_analysis.ipynb
 │   ├── extract_agent.ipynb
 │   ├── ga_plots.ipynb
 │   └── gauntlet_comparison.ipynb
 ├── results/
-│   ├── GA/                      # GA generation logs
-│   └── gauntlet/                # Evaluation logs
+│   ├── GA/run_N/                # ga_log.csv, agent_log.csv, baseline_log.csv, ga_checkpoint.pkl, config.json
+│   └── gauntlet/run_N/          # results_<agent>.csv, summary.csv, config.json
 ├── Tetris/
 │   ├── assets/
 │   │   ├── graphics/
@@ -48,9 +49,28 @@ Tetris-Project/
 │   ├── score.py
 │   ├── settings.py              # Static SRS rotation tables + kick data
 │   └── timers.py
-├── requirements.txt
-└── README.md
+├── requirements.txt             # game, AI, GA, plots
+├── requirements-notebooks.txt   # ipykernel, only needed to run the notebooks
+├── CHANGELOG.md
+└── readme.md
 ```
+---
+
+## Setup
+
+From the project folder (Windows):
+
+```bash
+py -m venv venv
+source venv/Scripts/activate                  # Git Bash   (PowerShell: .\venv\Scripts\Activate.ps1)
+pip install -r requirements.txt
+pip install -r requirements-notebooks.txt     # optional: only to run the notebooks
+```
+
+Without activating the environment you can call its Python directly, e.g. `venv/Scripts/python.exe Tetris/main.py`.
+
+On Python 3.14+ `requirements.txt` installs `pygame-ce` (a drop-in replacement) because `pygame` has no prebuilt packages there.
+
 ---
 
 ## How to Run
@@ -62,21 +82,56 @@ Launch a solo game session where the AI plays automatically using the heuristic 
 ```bash
 python Tetris/main.py
 ```
+
 ### 2. **Train AI Agents using the Genetic Algorithm**
 
-Train a population of AI agents using a genetic algorithm. The training process evolves agent weights over generations by evaluating their performance on key metrics such as score, lines cleared, level reached, and survival time. Agents are selected, mutated, and crossed over based on their fitness, resulting in increasingly optimized gameplay strategies.
+Train a population of weight vectors with a genetic algorithm, using the headless simulator (no window, no real-time waiting).
+
+- Each agent plays `--games` seeded games per generation. Game slot *k* uses the same piece sequence for **every** agent in that generation, so score differences come from the weights. The sequences change every generation, so agents can't over-fit to one.
+- Each game lasts `--max-time` seconds of *virtual* game time at `--ai-delay` ms per piece (65 s at 130 ms = 500 pieces). The simulator never waits: it computes each decision as fast as the CPU allows, so the real time per game is roughly `pieces x time per decision`.
+- Fitness = mean game score (+1 per piece placed). Clearing several lines at once scores far more, and dying early stops the score growing.
+- A **baseline agent** (the hand-tuned default weights) plays the same seeds every generation but is never bred; `RelBest` / `RelAvg` in the log are the population's fitness divided by its fitness, which removes "this generation's pieces were easy/hard" noise. Disable with `--no-baseline`.
+- Output goes to a new `results/GA/run_N/` (`ga_log.csv`, `agent_log.csv`, `baseline_log.csv`, `ga_checkpoint.pkl`, `config.json`). Runs are numbered automatically and never deleted. Continue a run with `--resume run_N` (keep `--pop` the same).
 
 ```bash
-python AI/GA/optimize.py
+python AI/GA/optimize.py --pop 12 --games 4 --max-time 60 --generations 10    # small test
+python AI/GA/optimize.py --workers 8                                           # defaults, but leave some CPU free
+python AI/GA/optimize.py                                                       # defaults: pop 50, 5 games, 65 s, 50 generations
 ```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--pop` | 50 | agents per generation |
+| `--games` | 5 | seeded games per agent per generation (more = less noisy ranking, slower; 1 is only good for a smoke test) |
+| `--max-time` | 65 | virtual seconds per game (÷ `--ai-delay` = piece cap) |
+| `--ai-delay` | 130 | ms of game time per piece (130 ≈ fastest recorded 40-line sprint pace, 195 = Guinness sprint pace, 60 = standalone AI) |
+| `--generations` | 50 | last generation number to reach |
+| `--workers` | all cores | worker processes; lower it to keep the CPU below 100% |
+| `--seed` | 12345 | base seed of the run |
+| `--resume run_N` | — | continue an existing run |
+| `--no-baseline` | — | don't play the baseline agent each generation |
+
+The best-fitness line bounces from generation to generation (different piece sequences each time); judge progress by the population average and `RelBest`/`RelAvg`, then confirm the best candidates in the gauntlet on fresh seeds.
 
 ### 3. **Evaluate Top Agents in Gauntlet Mode**
 
-Run a gauntlet-style tournament to compare the top-performing agents after training. This evaluation pits the best agents against each other in a series of head-to-head matches, logging their performance and enabling detailed analysis of agent strategies and effectiveness.
+Benchmark agents on identical seeded games in the headless simulator. Every agent plays the same piece sequences (on seeds the training never used), so the comparison is paired; results are logged to `results/gauntlet/run_N/` and a summary table is printed. The **baseline agent** (default weights) is always included and is the reference for the paired comparison. This is the step that picks the real winner.
 
 ```bash
-python AI/GA/gauntlet.py
+python AI/GA/gauntlet.py --from-run run_1          # best candidates of a GA run (top 5 by fitness + last generation) vs baseline
+python AI/GA/gauntlet.py --from-run run_1 --top 8  # more candidates
+python AI/GA/gauntlet.py --set final_run           # a weight set defined in gauntlet.py
+python AI/GA/gauntlet.py --from-run run_1 --workers 8
 ```
+
+Options: `--from-run`, `--top`, `--set`, `--games` (20), `--max-time` (130 s = 1000 pieces), `--ai-delay`, `--seed`, `--workers`, `--no-baseline`.
+
+Each gauntlet run folder contains one `results_<agent>.csv` per agent (per-game rows), `summary.csv` (one row per agent, including the paired difference against the reference), and `config.json` (the exact weights, seeds and settings that were tested).
+
+### 4. **Analyse results in the notebooks**
+
+Open the notebooks in `notebooks/` (they need `requirements-notebooks.txt`). Each one finds the project folder itself and ends with a cell that shows the newest run; pass another run's file (for example `GA_DIR / "run_3" / "ga_log.csv"`) to look at an older one.
+
 ---
 
 ## Cost Function Features
@@ -85,37 +140,38 @@ The AI evaluates every possible placement for BOTH the current tetromino and the
 
 - Aggregate Height
 - Number of Holes
+- Blockades (filled cells sitting above a hole)
 - Bumpiness
-- Blockades
-- Well Depth
 - Almost-Filled Lines
-- 1-Line, 2-Line, 3-Line Clears
-- Tetris (4-Line Clears)
-- Line Clear Bonuses
+- Fills Well (reward when the piece lands in the deepest well)
+- Line Clear Bonuses for 4-line (Tetris), 3-line, 2-line and 1-line clears
 
-Each feature is multiplied by an individual weight. These weights are optimized by the genetic algorithm during training (mutation, crossover, and selection).
+Weight order: `[agg_height, holes, blockades, bumpiness, almost_full, fills_well, clear_4, clear_3, clear_2, clear_1]`. Each feature is multiplied by an individual weight; these weights are optimized by the genetic algorithm during training (mutation, crossover, and selection).
+
+### Search speed
+
+`AI/evaluator.py` stores each board row and column as an integer and only recomputes the few columns and rows a piece touches (a bit-board search). It returns exactly the same moves and scores as the original cell-by-cell implementation, which is kept as `find_best_move_scored_reference` for verification, and is roughly 4-7x faster. The real game's workers and the simulator both use it.
+
+## Known limitations / not implemented
+
+- Scoring is "lines x level" only (levels and speed-up are switched off): no T-spins, combos, back-to-back or perfect-clear bonuses, no garbage lines / versus mode.
+- The AI looks at the current piece, the next piece and the held piece (the preview shows 3, the AI uses 1) and only considers straight-down drops (no slides under overhangs).
+- The simulator uses a virtual clock (time = pieces x AI delay). It does not model gravity, lock delay or worker latency; it assumes the AI is always faster than gravity.
+- No menu, pause, restart or human play.
 
 ---
 
 ## Logging and Analysis
 
-- `results/GA/`: Per-generation and per-agent performance metrics (CSV format: score, lines, weights, etc.)
-- `results/gauntlet/`: Head-to-head comparison logs for top agents
-- `notebooks/`: Jupyter notebooks for analyzing GA performance, agent fitness, weight convergence, and gameplay metrics
+- `results/GA/run_N/`: Per-generation (`ga_log.csv`), per-agent (`agent_log.csv`) and baseline (`baseline_log.csv`) metrics (score, lines, weights, deaths, etc.). `Time` columns are virtual game seconds. Each run gets the next free number and old runs are never deleted automatically.
+- `results/gauntlet/run_N/`: Per-agent game results, `summary.csv` and `config.json` of every gauntlet run.
+- `notebooks/`: Jupyter notebooks for analyzing GA performance, agent fitness, weight convergence, paired gauntlet comparisons and the baseline-relative curve.
 
 ---
+
 ## Title
 
 HEURISTIC-GA GREEDY LOOKAHEAD TETRIS AI
-
-
-## Dependencies
-
-Install the required Python packages before running any scripts:
-
-```bash
-pip install -r requirements.txt
-```
 
 ---
 
@@ -127,6 +183,9 @@ For detailed information about updates, improvements, and version history, see t
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-11-09 | Simulator Training ✅ | **Headless simulator + fitness v3 + baseline agent** — Seeded, parallel, machine-independent training and gauntlet with a virtual clock; fitness = mean game score; the default-weights baseline plays every generation for a luck-free progress curve; per-run result folders with config; notebooks and requirements updated. |
+| 2026-11-09 | Fast Search ✅ | **Bit-board move search** — Identical moves and scores to the reference implementation (verified on 1,400 random boards and 8 whole games), ~4-7x faster. |
+| 2026-11-09 | Blockades Fix ✅ | **`blockades` feature** now counts filled cells above the lowest hole (it used to equal roughly the number of filled cells). Weights need retuning. |
 | 2026-03-28 | Weight Re-tune ✅ | **Default Weight Re-tuning & Fitness v2** — Re-tuned defaults for corrected fills_well sign (agg_height 3.5, holes 6.0, boosted small clears). Fitness v2: 8-component with efficiency gate, Tetris rate bonus, consistency gate, stronger death penalty. |
 | 2026-03-28 | GA Overhaul ✅ | **GA Engine Overhaul** — Population 10→50, stagnation detection + mutation surge, diversity injection, median fitness, self-crossover prevention, weight bounds widened to [0,30], seeded initialization. |
 | 2026-03-28 | Phase 5 (Part 1) ✅ | **GA Fitness Overhaul** — Redesigned fitness to reward efficiency (lines/min), Tetris dominance (8× bonus), sqrt-based survival, and tiered death penalties. Timeout raised to 600s. |
