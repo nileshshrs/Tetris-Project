@@ -12,7 +12,7 @@ This project implements an AI system for Tetris using heuristic evaluation and a
 - **Lookahead**: **Hold-aware one-step lookahead** (compares best placement of current piece vs best placement of held piece, each with its own 1-step lookahead)
 - **Engine**: Custom Pygame Tetris engine with headless `TetrisCore` logic layer (zero Pygame dependency)
 - **Training / benchmarking**: a **headless simulator** (seeded pieces, piece cap, virtual clock) run in parallel worker processes — no window, no real-time waiting, results independent of machine load
-- **Fitness**: mean game score over several seeded games (multi-line clears score far more; dying early stops the score growing)
+- **Fitness**: mean game score over several seeded games, weighted by a built-in target: survive as often as the baseline and make at least 15× the baseline's Tetrises (full credit only when both are met)
 
 ## Project Structure
 
@@ -35,7 +35,7 @@ Tetris-Project/
 │   └── gauntlet_comparison.ipynb
 ├── results/
 │   ├── GA/run_N/                # ga_log.csv, agent_log.csv, baseline_log.csv, ga_checkpoint.pkl, config.json
-│   └── gauntlet/run_N/          # results_<agent>.csv, summary.csv, config.json
+│   └── gauntlet/from_run_N/     # results_<agent>.csv, summary.csv, config.json (agents of GA run_N)
 ├── Tetris/
 │   ├── assets/
 │   │   ├── graphics/
@@ -89,13 +89,19 @@ Train a population of weight vectors with a genetic algorithm, using the headles
 
 - Each agent plays `--games` seeded games per generation. Game slot *k* uses the same piece sequence for **every** agent in that generation, so score differences come from the weights. The sequences change every generation, so agents can't over-fit to one.
 - Each game lasts `--max-time` seconds of *virtual* game time at `--ai-delay` ms per piece (65 s at 130 ms = 500 pieces). The simulator never waits: it computes each decision as fast as the CPU allows, so the real time per game is roughly `pieces x time per decision`.
-- Fitness = mean game score (+1 per piece placed). Clearing several lines at once scores far more, and dying early stops the score growing.
+- Fitness = mean game score (+1 per piece placed) × **S** × **T**, where the two factors are 1.0 when the target is met:
+  - **S (survival)** = (fraction of games survived)^`--survival-power` (default 4): surviving every game like the baseline keeps 100%, losing 1 of 4 games keeps 32%, 2 of 4 keeps 6%.
+  - **T (Tetris target)** = min(1, Tetrises per piece / target)^`--tetris-power` (default 1), where the target is `--target-tetris-ratio` (default **15**) × the baseline's Tetris rate. The baseline's rate (0.0008 Tetrises per piece, i.e. 0.8 per 1,000-piece game) and the 15× are embedded as constants in `genetic_algorithm.py`; 15× is the multiple every candidate of the first GA run reached in the gauntlet (15.0–26.5×).
+  - **D (near-death, optional)** = (1 − share of pieces placed while the stack was ≥ `--danger-height` rows)^`--danger-power` (default power 0 = off). It rates how risky an agent plays, not only whether it dies.
+  - The baseline agent is scored with S (and D) only (it is the reference the Tetris target is measured against). `--survival-power 0 --tetris-power 0` gives the earlier score-only fitness.
+- Survival is only measured over the training game length, so use games as long as the gauntlet's (`--max-time 130` = 1000 pieces) when survival matters.
 - A **baseline agent** (the hand-tuned default weights) plays the same seeds every generation but is never bred; `RelBest` / `RelAvg` in the log are the population's fitness divided by its fitness, which removes "this generation's pieces were easy/hard" noise. Disable with `--no-baseline`.
 - Output goes to a new `results/GA/run_N/` (`ga_log.csv`, `agent_log.csv`, `baseline_log.csv`, `ga_checkpoint.pkl`, `config.json`). Runs are numbered automatically and never deleted. Continue a run with `--resume run_N` (keep `--pop` the same).
 
 ```bash
 python AI/GA/optimize.py --pop 12 --games 4 --max-time 60 --generations 10    # small test
 python AI/GA/optimize.py --workers 8                                           # defaults, but leave some CPU free
+python AI/GA/optimize.py --pop 12 --games 4 --max-time 130 --generations 30 --workers 8   # gauntlet-length games: survival counts
 python AI/GA/optimize.py                                                       # defaults: pop 50, 5 games, 65 s, 50 generations
 ```
 
@@ -109,13 +115,19 @@ python AI/GA/optimize.py                                                       #
 | `--workers` | all cores | worker processes; lower it to keep the CPU below 100% |
 | `--seed` | 12345 | base seed of the run |
 | `--resume run_N` | — | continue an existing run |
+| `--survival-power` | 4 | survival weighting of the fitness (0 = score only) |
+| `--target-tetris-ratio` | 15 | Tetris target built into the fitness: full credit needs this many times the baseline's Tetrises |
+| `--tetris-power` | 1 | how strongly missing the Tetris target is punished (0 = off) |
+| `--danger-power` | 0 | near-death penalty: fitness × (1 − share of pieces placed with the stack ≥ danger height)^power (0 = off) |
+| `--danger-height` | 16 | stack height (of 20 rows) counted as dangerous; higher = gentler, lower = harsher |
+| `--inject NAME…` | — | add known good agents to generation 0 (currently `g26`) |
 | `--no-baseline` | — | don't play the baseline agent each generation |
 
 The best-fitness line bounces from generation to generation (different piece sequences each time); judge progress by the population average and `RelBest`/`RelAvg`, then confirm the best candidates in the gauntlet on fresh seeds.
 
 ### 3. **Evaluate Top Agents in Gauntlet Mode**
 
-Benchmark agents on identical seeded games in the headless simulator. Every agent plays the same piece sequences (on seeds the training never used), so the comparison is paired; results are logged to `results/gauntlet/run_N/` and a summary table is printed. The **baseline agent** (default weights) is always included and is the reference for the paired comparison. This is the step that picks the real winner.
+Benchmark agents on identical seeded games in the headless simulator. Every agent plays the same piece sequences (on seeds the training never used), so the comparison is paired; results are logged to `results/gauntlet/from_run_N/` (named after the GA run that was tested; a repeat gets a `_2` suffix) and a summary table is printed. The **baseline agent** (default weights) is always included and is the reference for the paired comparison. This is the step that picks the real winner.
 
 ```bash
 python AI/GA/gauntlet.py --from-run run_1          # best candidates of a GA run (top 5 by fitness + last generation) vs baseline
@@ -124,7 +136,9 @@ python AI/GA/gauntlet.py --set final_run           # a weight set defined in gau
 python AI/GA/gauntlet.py --from-run run_1 --workers 8
 ```
 
-Options: `--from-run`, `--top`, `--set`, `--games` (20), `--max-time` (130 s = 1000 pieces), `--ai-delay`, `--seed`, `--workers`, `--no-baseline`.
+Options: `--from-run`, `--top`, `--set`, `--games` (20), `--max-time` (130 s = 1000 pieces), `--ai-delay`, `--seed`, `--workers`, `--no-baseline`, `--target-tetris-ratio`, `--target-survival-gap`, `--danger-height` (16; adds `MeanPeakHeight` and `MeanDangerShare` to `summary.csv`).
+
+**Target check.** The summary table also says whether each agent meets the target: survive as often as the baseline (within `--target-survival-gap`, default 0.05 = one death in 20 games) **and** make at least `--target-tetris-ratio` (default 15, the same target that is built into the training fitness) times the baseline's Tetrises per game. Each agent is marked `PASS` or `fail` (columns `SurvivalRate`, `TetrisRatio`, `MeetsTarget` in `summary.csv`).
 
 Each gauntlet run folder contains one `results_<agent>.csv` per agent (per-game rows), `summary.csv` (one row per agent, including the paired difference against the reference), and `config.json` (the exact weights, seeds and settings that were tested).
 
@@ -164,7 +178,7 @@ Weight order: `[agg_height, holes, blockades, bumpiness, almost_full, fills_well
 ## Logging and Analysis
 
 - `results/GA/run_N/`: Per-generation (`ga_log.csv`), per-agent (`agent_log.csv`) and baseline (`baseline_log.csv`) metrics (score, lines, weights, deaths, etc.). `Time` columns are virtual game seconds. Each run gets the next free number and old runs are never deleted automatically.
-- `results/gauntlet/run_N/`: Per-agent game results, `summary.csv` and `config.json` of every gauntlet run.
+- `results/gauntlet/from_run_N/`: Per-agent game results, `summary.csv` and `config.json` of every gauntlet run (`set_<name>/` for weight sets).
 - `notebooks/`: Jupyter notebooks for analyzing GA performance, agent fitness, weight convergence, paired gauntlet comparisons and the baseline-relative curve.
 
 ---

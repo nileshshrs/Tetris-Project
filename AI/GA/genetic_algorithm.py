@@ -126,31 +126,92 @@ class GA:
             f"({seeded} seeded, {self.population_size - seeded} random)")
 
     # ------------------------------------------------------------------
-    # Fitness (v3)
+    # Fitness (v5: score x survival x Tetris target)
     # ------------------------------------------------------------------
-    # Agents play several seeded games in the headless simulator, each capped
-    # at a fixed number of pieces. In that setting almost every reasonable
-    # weight vector survives the cap and clears ~0.4 lines/piece (the maximum),
-    # so lines cannot rank agents. The game's own score can: it pays far more
-    # for multi-line clears (1/2/3/4 lines = 40/100/300/1200), and dying early
-    # simply stops the score from growing. No hand-made bonuses or penalties.
-    PIECE_TIEBREAK = 1.0    # tiny per-piece credit so agents that score 0 still rank by survival
+    # THE TARGET (built into the fitness): an agent should survive as often as the
+    # baseline AND make at least TARGET_TETRIS_RATIO times the baseline's Tetrises.
+    #
+    # Agents play several seeded games in the headless simulator, each capped at a fixed
+    # number of pieces. In that setting almost every reasonable weight vector clears
+    # ~0.4 lines/piece (the maximum), so lines cannot rank agents. The game's own score
+    # can: it pays far more for multi-line clears (1/2/3/4 lines = 40/100/300/1200).
+    # Score alone rewards "glass cannons" (stack high for Tetrises, die late), so the
+    # score is weighted by two factors that are 1.0 when the target is met:
+    #
+    #   fitness = mean(score + 1 * pieces) * S * T
+    #
+    #   S (survival) = max(survival_rate, SURVIVAL_FLOOR) ** survival_power
+    #       survival_rate = fraction of the agent's games that did not end in a top-out.
+    #       Power 4: surviving every game keeps 100%, losing 1 of 4 keeps 32%, 2 of 4 keeps 6%.
+    #       (The baseline survives every game.)
+    #   T (Tetris target) = max(min(1, tetris_rate / target_rate), TETRIS_FLOOR) ** tetris_power
+    #       tetris_rate = Tetrises per piece over the agent's games;
+    #       target_rate = TARGET_TETRIS_RATIO * BASELINE_TETRIS_PER_PIECE.
+    #       Reaching the target gives 1.0; reaching half of it gives 0.5 (power 1).
+    #
+    # The floors keep agents that fail a factor completely from all tying at zero, so
+    # they still rank among themselves. survival_power = 0 and tetris_power = 0 give the
+    # old score-only fitness (v3).
+    PIECE_TIEBREAK = 1.0          # tiny per-piece credit so agents that score 0 still rank by survival
+    SURVIVAL_POWER = 4.0
+    SURVIVAL_FLOOR = 0.1
+    TETRIS_POWER = 1.0
+    TETRIS_FLOOR = 0.02
+    # D (danger / near-death) = max(1 - mean_danger_share, DANGER_FLOOR) ** danger_power
+    #       danger_share = fraction of an agent's placed pieces that landed with the stack
+    #       at least simulator.DANGER_HEIGHT rows high (so agents that live near the top
+    #       lose fitness even when they have not died yet). Typical shares are 0-7%, so a
+    #       power around 10 is needed for it to matter: 3% -> 0.74, 6% -> 0.54, 0% -> 1.0.
+    #       Default 0 = off (fitness v5 unchanged). Not applied unless danger is passed in.
+    DANGER_POWER = 0.0
+    DANGER_FLOOR = 0.1
+
+    # Embedded measurements. BASELINE_TETRIS_PER_PIECE was measured with the baseline weights
+    # (the hand-tuned defaults, optimize.BASELINE_WEIGHTS): 0.8 Tetrises per 1000-piece game
+    # over 20 gauntlet games (results/gauntlet/run_1). Re-measure it with the gauntlet if the
+    # baseline weights or the evaluator ever change.
+    BASELINE_TETRIS_PER_PIECE = 0.0008
+    # 15x: every candidate of the first GA run made 15.0-26.5x the baseline's Tetrises in the
+    # gauntlet, so 15x means "keep the Tetris-building the GA found, but survive like the baseline".
+    TARGET_TETRIS_RATIO = 15.0
 
     @staticmethod
     def game_fitness(score, pieces):
-        """Fitness of a single game."""
+        """Fitness of a single game (before the survival / Tetris weighting)."""
         return score + GA.PIECE_TIEBREAK * pieces
 
-    def evaluate_agent_fitness(self, scores, pieces):
+    def evaluate_agent_fitness(self, scores, pieces, topped_out=None, tetrises=None, danger=None):
         """
-        Fitness of one agent = mean game fitness over its games.
+        Fitness of one agent over its games.
 
         Args:
             scores: list of final game scores (one per game)
             pieces: list of pieces placed (one per game)
+            topped_out: list of bools, True where the game ended in a top-out
+                        (None = no survival weighting)
+            tetrises: list of Tetris (4-line clear) counts per game
+                      (None = no Tetris-target weighting, used for the baseline reference)
+            danger: list of danger shares per game (None = no near-death weighting)
         """
         values = [self.game_fitness(s, p) for s, p in zip(scores, pieces)]
-        return float(np.mean(values))
+        fitness = float(np.mean(values))
+
+        power = getattr(self, "survival_power", self.SURVIVAL_POWER)
+        if topped_out is not None and power:
+            survival_rate = 1.0 - float(np.mean([bool(t) for t in topped_out]))
+            fitness *= max(survival_rate, self.SURVIVAL_FLOOR) ** power
+
+        tpower = getattr(self, "tetris_power", self.TETRIS_POWER)
+        if tetrises is not None and tpower:
+            ratio = getattr(self, "target_tetris_ratio", self.TARGET_TETRIS_RATIO)
+            target_rate = ratio * self.BASELINE_TETRIS_PER_PIECE
+            rate = float(np.sum(tetrises)) / max(float(np.sum(pieces)), 1.0)
+            fitness *= max(min(1.0, rate / target_rate), self.TETRIS_FLOOR) ** tpower
+
+        dpower = getattr(self, "danger_power", self.DANGER_POWER)
+        if danger is not None and dpower:
+            fitness *= max(1.0 - float(np.mean(danger)), self.DANGER_FLOOR) ** dpower
+        return fitness
 
     def reflect_bounds(self, w, minval=1e-4, maxval=30.0):
         new_w = []

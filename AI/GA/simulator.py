@@ -38,7 +38,7 @@ for _p in (_ROOT, os.path.join(_ROOT, "Tetris"), os.path.join(_ROOT, "AI")):
         sys.path.insert(0, _p)
 
 from Tetris.settings import (  # noqa: E402
-    COLUMNS, SCORE_DATA, TETROMINOS, create_7bag, get_next_tetromino,
+    COLUMNS, ROWS, SCORE_DATA, TETROMINOS, create_7bag, get_next_tetromino,
 )
 from Tetris.core import TetrisCore  # noqa: E402
 from AI.evaluator import find_best_move_with_hold  # noqa: E402
@@ -47,8 +47,21 @@ PREVIEW_SIZE = 3                       # same as Main.next_shapes
 SPAWN_X = (COLUMNS // 2) - 1           # same as settings.BLOCK_OFFSET.x
 SPAWN_Y = -1                           # same as settings.BLOCK_OFFSET.y
 
+# Near-death measure: a piece counts as "placed in danger" when the stack (after the
+# placement and line clears) is at least this many rows high. ROWS is 20.
+# 16: in a 60-game test, at 14 rows over half of the surviving games already counted.
+DANGER_HEIGHT = 16
 
-def play_game(weights, seed, max_pieces=500, ai_delay_ms=130):
+
+def stack_height(grid):
+    """Rows from the floor to the highest filled cell (0 for an empty board)."""
+    for r in range(ROWS):
+        if any(grid[r]):
+            return ROWS - r
+    return 0
+
+
+def play_game(weights, seed, max_pieces=500, ai_delay_ms=130, danger_height=DANGER_HEIGHT):
     """
     Play one game.
 
@@ -57,10 +70,12 @@ def play_game(weights, seed, max_pieces=500, ai_delay_ms=130):
         seed: int, seeds the 7-bag RNG (same seed -> same piece sequence)
         max_pieces: stop after this many locked pieces (agent "survived")
         ai_delay_ms: game time charged per locked piece (virtual clock)
+        danger_height: stack height (rows) from which a placed piece counts as "in danger"
 
     Returns:
         dict with lines, pieces, score, time_s, lines_per_sec,
-        num_1line..num_tetris, topped_out
+        num_1line..num_tetris, topped_out, peak_height (highest stack, rows),
+        danger_share (fraction of placed pieces with stack >= DANGER_HEIGHT)
     """
     rng = random.Random(seed)
     bag = create_7bag(rng)
@@ -77,6 +92,8 @@ def play_game(weights, seed, max_pieces=500, ai_delay_ms=130):
     score = 0
     clears = {1: 0, 2: 0, 3: 0, 4: 0}
     topped_out = False
+    peak_height = 0
+    danger_pieces = 0
 
     def advance():
         """Mirror of Main.get_next_shape: take next piece, refill queue."""
@@ -117,6 +134,12 @@ def play_game(weights, seed, max_pieces=500, ai_delay_ms=130):
             score += SCORE_DATA[cleared]          # level is always 1 in this project
             clears[cleared] += 1
 
+        h = stack_height(grid)
+        if h > peak_height:
+            peak_height = h
+        if h >= danger_height:
+            danger_pieces += 1
+
         current = advance()
         if TetrisCore.is_game_over(grid, current, 0, SPAWN_X, SPAWN_Y):
             topped_out = True
@@ -135,10 +158,12 @@ def play_game(weights, seed, max_pieces=500, ai_delay_ms=130):
         "num_3line": clears[3],
         "num_tetris": clears[4],
         "topped_out": topped_out,
+        "peak_height": peak_height,
+        "danger_share": danger_pieces / pieces if pieces else 0.0,
     }
 
 
 def play_job(job):
-    """Pool-friendly wrapper: job = (agent_idx, game_idx, weights, seed, max_pieces, ai_delay_ms)."""
-    agent_idx, game_idx, weights, seed, max_pieces, ai_delay_ms = job
-    return agent_idx, game_idx, play_game(weights, seed, max_pieces, ai_delay_ms)
+    """Pool-friendly wrapper: job = (agent_idx, game_idx, weights, seed, max_pieces, ai_delay_ms[, danger_height])."""
+    agent_idx, game_idx, weights, seed, max_pieces, ai_delay_ms, *rest = job
+    return agent_idx, game_idx, play_game(weights, seed, max_pieces, ai_delay_ms, *rest)

@@ -21,7 +21,8 @@ Usage:
 generation) with the highest BestFitness, plus the last generation's best. Those scores
 come from noisy generations, so this is the step that picks the real winner on fresh seeds.
 
-Results go to results/gauntlet/run_<N>/results_<agent>.csv with the columns the
+Results go to results/gauntlet/from_<GA run>/ (e.g. from_run_4) or set_<name>/ (a second
+gauntlet on the same source gets a _2 suffix), as results_<agent>.csv with the columns the
 notebooks expect (AgentName, GameNumber, Score, NumTetrises, Num3Line, Num2Line,
 Num1Line, TimeSurvived, TotalLinesCleared, CurrentLevel), plus Seed, Pieces, Died.
 """
@@ -38,8 +39,9 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from simulator import play_job
+from simulator import DANGER_HEIGHT, play_job
 from optimize import BASELINE_WEIGHTS   # single source of truth for the baseline agent
+from genetic_algorithm import GA        # single source of truth for the Tetris target
 
 BASELINE_NAME = "baseline"
 
@@ -185,6 +187,7 @@ GA_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '
 CSV_HEADER = [
     "AgentName", "GameNumber", "Score", "NumTetrises", "Num3Line", "Num2Line", "Num1Line",
     "TimeSurvived", "TotalLinesCleared", "CurrentLevel", "Seed", "Pieces", "Died",
+    "PeakHeight", "DangerShare",
 ]
 
 # One row per agent. VsRef* = paired difference in score against the reference agent
@@ -192,7 +195,18 @@ CSV_HEADER = [
 SUMMARY_HEADER = [
     "AgentName", "IsReference", "Games", "MeanScore", "SemScore", "MedianScore",
     "MeanLines", "MeanTetrises", "Deaths", "VsRefMeanDiff", "VsRefSemDiff", "VsRefBetterIn",
+    "SurvivalRate", "TetrisRatio", "MeetsTarget", "MeanPeakHeight", "MeanDangerShare",
 ]
+
+
+def meets_target(survival, tetrises, ref_survival, ref_tetrises, ratio, gap):
+    """
+    The target: survive as often as the reference agent (within `gap`, e.g. 0.05 = one
+    death in 20 games) AND make at least `ratio` times its Tetrises per game.
+    """
+    survives = survival >= ref_survival - gap - 1e-9
+    tetris_ok = tetrises >= ratio * ref_tetrises if ref_tetrises > 0 else tetrises > 0
+    return bool(survives and tetris_ok)
 
 
 def parse_args():
@@ -205,6 +219,14 @@ def parse_args():
     ap.add_argument("--ga-out", type=str, default=GA_ROOT, help="folder that holds the GA run_N folders")
     ap.add_argument("--no-baseline", action="store_true",
                     help="don't add the baseline agent (the first agent becomes the reference)")
+    ap.add_argument("--target-tetris-ratio", type=float, default=GA.TARGET_TETRIS_RATIO,
+                    help="target: an agent must make at least this many times the reference's Tetrises per game "
+                         "(default: the same target that is built into the training fitness, GA.TARGET_TETRIS_RATIO = 15)")
+    ap.add_argument("--target-survival-gap", type=float, default=0.05,
+                    help="target: an agent's survival rate may be at most this far below the reference's "
+                         "(0.05 = one death in 20 games; 0 = exactly as often)")
+    ap.add_argument("--danger-height", type=int, default=DANGER_HEIGHT,
+                    help="stack height in rows from which a placed piece counts as 'in danger' (DangerShare column)")
     ap.add_argument("--games", type=int, default=20, help="games per agent")
     ap.add_argument("--max-time", type=float, default=130.0,
                     help="game-time budget per game in virtual seconds (pieces = max_time / ai_delay)")
@@ -212,14 +234,22 @@ def parse_args():
     ap.add_argument("--seed", type=int, default=1_000_000,
                     help="base seed (kept away from the GA's training seeds)")
     ap.add_argument("--workers", type=int, default=0, help="worker processes (0 = all cores)")
-    ap.add_argument("--out", type=str, default=RESULTS_ROOT, help="folder that holds run_N folders")
+    ap.add_argument("--out", type=str, default=RESULTS_ROOT, help="folder that holds the gauntlet result folders")
     return ap.parse_args()
 
 
-def next_run_dir(root):
+def next_run_dir(root, label):
+    """
+    Output folder named after what was tested: from_run_4 (agents of GA run_4) or
+    set_final_run (a weight set). A second gauntlet on the same source gets _2, _3, ...
+    so nothing is ever overwritten.
+    """
     os.makedirs(root, exist_ok=True)
-    nums = [int(m.group(1)) for d in os.listdir(root) if (m := re.fullmatch(r"run_(\d+)", d))]
-    path = os.path.abspath(os.path.join(root, f"run_{max(nums, default=0) + 1}"))
+    base = os.path.abspath(os.path.join(root, label))
+    path, n = base, 2
+    while os.path.exists(path):
+        path = f"{base}_{n}"
+        n += 1
     os.makedirs(path)
     return path
 
@@ -291,7 +321,8 @@ def main():
     max_pieces = int(args.max_time * 1000 / args.ai_delay)
     seeds = [args.seed + k for k in range(args.games)]
 
-    run_dir = next_run_dir(args.out)
+    run_dir = next_run_dir(args.out, f"from_{args.from_run}" if args.from_run
+                           else f"set_{args.agent_set or 'final_run'}")
     print(f"[gauntlet] {desc} | reference agent: {names[ref_idx]}")
     print(f"[gauntlet] agents={names} games={args.games} "
           f"budget={args.max_time:g}s @ {args.ai_delay}ms/piece = {max_pieces} pieces workers={workers}")
@@ -309,7 +340,7 @@ def main():
             "agents": dict(zip(names, weights)),
         }, f, indent=2)
 
-    jobs = [(a, k, weights[a], seeds[k], max_pieces, args.ai_delay)
+    jobs = [(a, k, weights[a], seeds[k], max_pieces, args.ai_delay, args.danger_height)
             for a in range(len(names)) for k in range(args.games)]
     results = [[None] * args.games for _ in names]
 
@@ -329,13 +360,19 @@ def main():
             for k, r in enumerate(results[a]):
                 w.writerow([name, k + 1, r["score"], r["num_tetris"], r["num_3line"], r["num_2line"],
                             r["num_1line"], round(r["time_s"], 2), r["lines"], 1,
-                            seeds[k], r["pieces"], int(r["topped_out"])])
+                            seeds[k], r["pieces"], int(r["topped_out"]),
+                            r["peak_height"], round(r["danger_share"], 4)])
 
     # ---- summary ----
     ref = np.array([r["score"] for r in results[ref_idx]], dtype=float)
     width = max(10, max(len(n) for n in names) + 2)
-    print(f"\n{'agent':<{width}}{'score mean':>12}{'+-sem':>8}{'median':>9}{'lines':>8}{'tetris':>8}"
-          f"{'died':>8}   vs {names[ref_idx]} (paired, per seed)")
+    ref_tet = float(np.mean([r["num_tetris"] for r in results[ref_idx]]))
+    ref_surv = 1.0 - sum(r["topped_out"] for r in results[ref_idx]) / args.games
+    print(f"\nTarget: survive as often as {names[ref_idx]} ({ref_surv * 100:.0f}%, tolerance "
+          f"{args.target_survival_gap * 100:.0f}%) AND make >= {args.target_tetris_ratio:g}x its Tetrises "
+          f"({ref_tet:.2f} -> {args.target_tetris_ratio * ref_tet:.2f} per game)")
+    print(f"{'agent':<{width}}{'score mean':>12}{'+-sem':>8}{'median':>9}{'lines':>8}{'tetris':>8}"
+          f"{'tet/ref':>9}{'survive':>9}{'died':>8}{'target':>8}   vs {names[ref_idx]} (paired, per seed)")
     summary_rows = []
     for a, name in enumerate(names):
         sc = np.array([r["score"] for r in results[a]], dtype=float)
@@ -343,6 +380,13 @@ def main():
         lines = np.mean([r["lines"] for r in results[a]])
         tet = np.mean([r["num_tetris"] for r in results[a]])
         died = sum(r["topped_out"] for r in results[a])
+        surv = 1.0 - died / args.games
+        tet_ratio = tet / ref_tet if ref_tet > 0 else None
+        if a == ref_idx:
+            target = "(ref)"
+        else:
+            target = "PASS" if meets_target(surv, tet, ref_surv, ref_tet, args.target_tetris_ratio,
+                                            args.target_survival_gap) else "fail"
         diff_mean = diff_sem = better = None
         if a == ref_idx or len(sc) < 2:
             paired = "(reference)" if a == ref_idx else "-"
@@ -350,14 +394,18 @@ def main():
             d = sc - ref
             diff_mean, diff_sem, better = d.mean(), d.std(ddof=1) / np.sqrt(len(d)), int((d > 0).sum())
             paired = f"{diff_mean:+.0f} +- {diff_sem:.0f}  (better in {better}/{len(d)})"
+        ratio_txt = f"{tet_ratio:.1f}x" if tet_ratio is not None else "-"
         print(f"{name:<{width}}{sc.mean():>12.0f}{sem:>8.0f}{np.median(sc):>9.0f}{lines:>8.0f}{tet:>8.1f}"
-              f"{died:>5}/{args.games:<2}   {paired}")
+              f"{ratio_txt:>9}{surv * 100:>8.0f}%{died:>5}/{args.games:<2}{target:>8}   {paired}")
         summary_rows.append([
             name, int(a == ref_idx), len(sc), round(sc.mean(), 2), round(sem, 2), float(np.median(sc)),
             round(float(lines), 2), round(float(tet), 3), died,
             "" if diff_mean is None else round(diff_mean, 2),
             "" if diff_sem is None else round(diff_sem, 2),
             "" if better is None else better,
+            round(surv, 3), "" if tet_ratio is None else round(tet_ratio, 3), target,
+            round(float(np.mean([r["peak_height"] for r in results[a]])), 2),
+            round(float(np.mean([r["danger_share"] for r in results[a]])), 4),
         ])
 
     with open(os.path.join(run_dir, "summary.csv"), "w", newline="") as f:

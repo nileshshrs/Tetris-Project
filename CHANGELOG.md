@@ -8,6 +8,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## 2026-11-12: Near-Death Measure, Warm Start & Gauntlet Naming
+
+### Added
+- **Near-death (stack height) measure** (`AI/GA/simulator.py`, `AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py`) — `play_game` now also returns `peak_height` (highest stack in rows of 20) and `danger_share` (fraction of placed pieces after which the stack was at least `danger_height` rows high). It scores how risky an agent plays, not only whether it dies. Fitness gains an optional factor `D = max(1 - mean_danger_share, 0.1) ^ danger_power`; `--danger-power` defaults to 0 (off, same fitness as v5), `--danger-height` defaults to 16. A higher height counts fewer pieces as dangerous (gentler penalty); a higher power punishes the same share harder. Measured at height 16: games that ended in a top-out had a danger share of about 10%, survivors about 0.6%; the baseline peaks at about 8 rows, Tetris-building agents at 13-16. The baseline is scored with `S` and `D`. `agent_log.csv`/`baseline_log.csv` gain `AvgPeakHeight` and `AvgDangerShare`.
+- **Warm start** (`AI/GA/optimize.py`) — `--inject g26` puts a known good agent (`INJECTED_AGENTS`, the weights of GA run `run_1` generation 26 from the earlier batch) into generation 0 next to the two built-in seed vectors (default and baseline weights). Without it, 3 of 5 runs at danger 15 / power 12 never found Tetris-building play and collapsed.
+- **Danger columns in the gauntlet** (`AI/GA/gauntlet.py`) — `--danger-height` (default 16); per-game `PeakHeight`, `DangerShare` and `summary.csv` columns `MeanPeakHeight`, `MeanDangerShare`.
+
+### Changed
+- **Gauntlet folders are named after the GA run they test** (`AI/GA/gauntlet.py`) — `results/gauntlet/from_run_N/` (or `set_<name>/` for a weight set); a repeat gets `_2`, `_3`. Before they were numbered by order, which drifted from the GA run numbers.
+- **`notebooks/gauntlet_comparison.ipynb`** — `latest_run` picks the newest finished gauntlet folder; `analyze_agents` accepts a folder name (`"from_run_4"`) or an old run number.
+
+### Results
+- **Five-run batch** (seeds 66666, 77777, 88888, 99999, 10101; `--pop 12 --games 10 --max-time 130 --generations 30 --tetris-power 2 --danger-height 15 --danger-power 10 --inject g26`): no run collapsed. Best fitness stayed flat at about 29-36k (g26 alone about 33k; baseline about 18.7k); the GA found no agent clearly better than g26. The population average rose to 15-25k around generations 9-18 and fell back to 7-9k by generation 30, so the useful agents are in the middle generations.
+- **Gauntlet on fresh seeds** (3,000,000-3,000,099, 100 games, 1000 pieces, danger height 15): 20 of 35 candidates meet the target (survival within 5 points of the baseline and at least 15x its Tetrises); 4 of them are copies of g26. Per run: 6/6, 4/7, 1/8, 3/7, 6/7 pass. g26 itself: 95% survival, 20.4x. Best score among passing agents: `run_5_g12` (35,470; 97%; 23.3x). Safest: `run_1_g21` (99% survival, 1 death in 100 games; 19.2x). Agents above about 23x die more (down to 78% survival); their peak stack is 16-18 rows and danger share 2-5%. Run 3 had the best training fitness (38k) and the worst gauntlet (1 of 8 pass): training fitness over 10 games overrates risky agents.
+- **Visual game (one manual run)**: `run_1_g21` in the real game died after 4 min 8 s (913 lines, 26 Tetrises, 29 triples, about 2,280 pieces). Tetris rate was 11.4 per 1,000 pieces (simulator: 12.3), so placement quality carried over, but it did not survive 20 minutes. One run is one sample.
+
+### Notes
+- **The simulator's delay is a time label.** It places pieces instantly (no gravity, lock delay or latency), so changing `--ai-delay` does not change which pieces an agent survives; with a fixed `--max-time` a smaller delay only makes the game longer (more pieces, more chances to die).
+- Fitness values with a non-zero `--danger-power` are not comparable with earlier runs. GA randomness (initial population, breeding) is not seeded by `--seed`, so runs are not reproducible; only the game seeds are.
+- Picking the best of many candidates on one seed set overstates the winner; the shortlist (`run_5_g12`, `run_1_g6`, `run_1_g21`) was not re-tested on a third seed set.
+
+## 2026-11-10: Survival- and Tetris-Target Fitness (v4/v5)
+
+### Changed
+- **Fitness v5: the target is built into the fitness** (`AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py`) — The goal "survive as often as the baseline AND make at least 15x the baseline's Tetrises" is now part of the training fitness, not only a gauntlet check: `fitness = mean(score + 1 x pieces) x S x T`. `S` is the survival factor of v4 (below). `T = max(min(1, tetris_rate / target_rate), 0.02) ^ tetris_power` where `tetris_rate` is Tetrises per piece over the agent's games and `target_rate = TARGET_TETRIS_RATIO (15) x BASELINE_TETRIS_PER_PIECE (0.0008)`; both constants are embedded in `genetic_algorithm.py` (the baseline's rate is the 0.8 Tetrises per 1000-piece game measured in gauntlet `run_1` with the baseline weights - re-measure it if the baseline weights or the evaluator change). Both factors are 1.0 when the target is met, so a safe agent above the target keeps its full score; a baseline-like agent (0.4 Tetrises per 461-piece game) falls to about 7% and a risky agent that loses 1 of 4 games to 32%. New flags `--target-tetris-ratio` (15) and `--tetris-power` (1; 0 = off); `evaluate_agent_fitness` takes an optional `tetrises` list. The baseline reference is scored with `S` only (not `T`), so `RelBest`/`RelAvg` read "fitness / the baseline's survival-weighted score". The gauntlet's default `--target-tetris-ratio` now comes from the same constant (`GA.TARGET_TETRIS_RATIO`). On the `run_1` data only 74 of 360 agent-generations met both parts (189 had no deaths, 223 had >= 15x Tetrises), which shows the survival/Tetris trade-off the fitness now has to resolve.
+- **Fitness v4** (`AI/GA/genetic_algorithm.py`, `AI/GA/optimize.py`) — Fitness is now `mean(score + 1 × pieces) × max(survival_rate, 0.1) ^ survival_power`, where `survival_rate` is the fraction of the agent's games that did not end in a top-out. Default power 4: surviving every game keeps the full score, losing 1 of 4 games keeps 32%, losing 2 of 4 keeps 6%. This demands baseline-like survival first and then ranks by score (Tetrises). The floor keeps agents that die in every game from all tying at 0. The baseline agent is scored with the same function (its survival is 100%, so its fitness is unchanged). New flag `--survival-power` (`0` reproduces fitness v3, score only); `evaluate_agent_fitness` takes an optional `topped_out` list.
+
+### Added
+- **Target check in the gauntlet** (`AI/GA/gauntlet.py`) — Each agent is marked `PASS`/`fail` against the target "survive as often as the reference (within `--target-survival-gap`, default 0.05 = one death in 20 games) AND make at least `--target-tetris-ratio` (default 15) times the reference's Tetrises per game". The default 15 is based on data, not arbitrary: on the first v3 gauntlet (`run_1`, baseline 0.8 Tetrises per 1000-piece game) the eight GA candidates made 15.0-26.5x the baseline's Tetrises (the five clearly better in score: 18.6-26.5x, mean 21.0x), so 15x is the level every candidate reached. The target therefore means "keep the Tetris-building the GA found, but survive like the baseline". The table gains `tet/ref`, `survive` and `target` columns; `summary.csv` gains `SurvivalRate`, `TetrisRatio`, `MeetsTarget`. On that gauntlet every candidate cleared the Tetris half (12-21 Tetrises per game) and failed the survival half (15-70% against the baseline's 100%).
+
+### Why
+- **Gauntlet of the first v3 run** (`run_1`: 8 candidates + baseline, 20 fresh games × 1000 pieces): the best candidate scored 40,195 against the baseline's 17,692 (2.3×, better in 19 of 20 games) but survived only 70% of its games; the other candidates survived 15–55%, while the baseline never died. Score-only fitness rewards agents that stack for Tetrises and die late.
+- Agents that looked best in training (highest fitness in the log) did worst in the gauntlet.
+
+### Notes
+- **Survival is only measured over the training game length.** In `run_1`, deaths in training (461-piece games, 4 games) did not predict survival in the gauntlet (rank correlation 0.00 over the 8 candidates; the four candidates with no training deaths survived just 30-45% of the 1000-piece games). When survival matters, train on gauntlet-length games (`--max-time 130`); more games per agent give finer survival estimates (with 4 games the rate moves in 25% steps).
+- Fitness values from v3 and v4 runs are not comparable.
+
 ## 2026-11-09: Simulator-Based Training, Fitness v3, Baseline Agent & Fast Search
 
 ### Added

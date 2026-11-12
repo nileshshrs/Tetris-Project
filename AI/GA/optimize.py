@@ -27,7 +27,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from genetic_algorithm import GA
-from simulator import play_job
+from simulator import DANGER_HEIGHT, play_job
 
 N_WEIGHTS = 10
 
@@ -44,6 +44,7 @@ AGENT_LOG_HEADER = (
     + [f"W{i+1}" for i in range(N_WEIGHTS)]
     + ["AvgNum1Line", "AvgNum2Line", "AvgNum3Line", "AvgNumTetris"]
     + ["Fitness", "AvgPieces", "AvgLinesPerSec", "Deaths"]
+    + ["AvgPeakHeight", "AvgDangerShare"]
 )
 
 GA_LOG_HEADER = (
@@ -66,13 +67,24 @@ BASELINE_WEIGHTS = [1.275, 4.0, 1.2, 0.8, 0.5, 3.0, 20, 5, 2, 0.1]
 BASELINE_LOG_HEADER = [
     "Generation", "Fitness", "AvgScore", "AvgLines", "AvgPieces", "AvgTime", "AvgLinesPerSec", "Deaths",
     "AvgNum1Line", "AvgNum2Line", "AvgNum3Line", "AvgNumTetris",
+    "AvgPeakHeight", "AvgDangerShare",
 ]
 
 # Known-good starting points for generation 0
 SEED_WEIGHTS = [
     [3.5, 6.0, 1.5, 1.5, 0.8, 1.5, 20, 8, 4, 2],        # re-tuned defaults (pre-blockades-fix)
-    [1.275, 4.0, 1.2, 0.8, 0.5, 3.0, 20, 5, 2, 0.1],    # legacy manual-tuned baseline
+    BASELINE_WEIGHTS,                                   # legacy manual-tuned baseline (same as the reference agent)
 ]
+
+# Optional warm start (--inject g26): agents found by an earlier run, put into generation 0 next to
+# the seeds above. Without them a run has to find the Tetris-building style by chance (3 of 5 runs
+# never did). Weights are the full-precision values from results/gauntlet/from_run_1/config.json.
+INJECTED_AGENTS = {
+    # GA run_1 (seed 11111, danger 16/12), generation 26: 98.3% survival, 15.4x the baseline's Tetrises
+    # over 60 gauntlet games (seed 1,000,000).
+    "g26": [4.738595880072, 22.352468674973, 10.316636145297, 8.386070325721, 27.747232919654,
+            6.855264518753, 18.757195771304, 15.394482119433, 5.331512132249, 3.408419513106],
+}
 
 
 def parse_args():
@@ -90,6 +102,22 @@ def parse_args():
     ap.add_argument("--seed", type=int, default=12345, help="base seed for the whole run")
     ap.add_argument("--out", type=str, default=RESULTS_ROOT, help="folder that holds run_N folders")
     ap.add_argument("--resume", type=str, default=None, help="existing run folder name to continue (e.g. run_6)")
+    ap.add_argument("--survival-power", type=float, default=GA.SURVIVAL_POWER,
+                    help="fitness = mean score x (fraction of games survived)^power. Default 4: survive every game "
+                         "like the baseline first, then rank by score (Tetrises). 0 = score only (old fitness v3)")
+    ap.add_argument("--target-tetris-ratio", type=float, default=GA.TARGET_TETRIS_RATIO,
+                    help="Tetris target built into the fitness: full credit needs at least this many times the "
+                         "baseline's Tetrises (default 15, see genetic_algorithm.py)")
+    ap.add_argument("--tetris-power", type=float, default=GA.TETRIS_POWER,
+                    help="how strongly missing the Tetris target is punished (1 = proportionally, 0 = off)")
+    ap.add_argument("--danger-power", type=float, default=GA.DANGER_POWER,
+                    help="near-death penalty: fitness x (1 - share of pieces placed with the stack >= --danger-height "
+                         "rows)^power. 0 = off (default); ~10 makes a 3%% share cost about 26%% of the fitness")
+    ap.add_argument("--danger-height", type=int, default=DANGER_HEIGHT,
+                    help="stack height in rows (of 20) from which a placed piece counts as 'in danger' (default 16)")
+    ap.add_argument("--inject", nargs="*", choices=sorted(INJECTED_AGENTS), default=[],
+                    help="warm start: add these earlier-found agents to generation 0 (e.g. --inject g26). "
+                         "The seed agents and the baseline weights are always included")
     ap.add_argument("--no-baseline", action="store_true",
                     help="don't play the reference (baseline) agent each generation (saves ~1 agent of compute)")
     return ap.parse_args()
@@ -128,11 +156,16 @@ def main():
     ga = GA(population_size=args.pop, n_weights=N_WEIGHTS,
             log_file="ga_log.csv", checkpoint_file="ga_checkpoint.pkl", misc_dir=run_dir)
 
+    ga.survival_power = args.survival_power
+    ga.tetris_power = args.tetris_power
+    ga.target_tetris_ratio = args.target_tetris_ratio
+    ga.danger_power = args.danger_power
+
     if resuming and os.path.exists(checkpoint):
         last_gen, history = ga.load_checkpoint()
         start_gen = last_gen + 1
     else:
-        ga.initialize_population(seed_weights=SEED_WEIGHTS)
+        ga.initialize_population(seed_weights=SEED_WEIGHTS + [INJECTED_AGENTS[n] for n in args.inject])
         start_gen = 0
         history = []
         with open(agent_log, "w", newline="") as f:
@@ -161,10 +194,10 @@ def main():
 
             # Game slot k uses seeds[k] for EVERY agent (and the baseline), so everyone
             # faces identical piece sequences; the baseline is index `args.pop`.
-            jobs = [(i, k, ga.population[i], seeds[k], max_pieces, args.ai_delay)
+            jobs = [(i, k, ga.population[i], seeds[k], max_pieces, args.ai_delay, args.danger_height)
                     for i in range(args.pop) for k in range(args.games)]
             if use_baseline:
-                jobs += [(args.pop, k, BASELINE_WEIGHTS, seeds[k], max_pieces, args.ai_delay)
+                jobs += [(args.pop, k, BASELINE_WEIGHTS, seeds[k], max_pieces, args.ai_delay, args.danger_height)
                          for k in range(args.games)]
             results = [[None] * args.games for _ in range(args.pop + (1 if use_baseline else 0))]
             done = 0
@@ -179,7 +212,10 @@ def main():
 
             fitness_values = [
                 ga.evaluate_agent_fitness([g["score"] for g in results[i]],
-                                          [g["pieces"] for g in results[i]])
+                                          [g["pieces"] for g in results[i]],
+                                          [g["topped_out"] for g in results[i]],
+                                          [g["num_tetris"] for g in results[i]],
+                                          [g["danger_share"] for g in results[i]])
                 for i in range(args.pop)
             ]
             deaths = [sum(g["topped_out"] for g in results[i]) for i in range(args.pop)]
@@ -189,13 +225,18 @@ def main():
             if use_baseline:
                 b = args.pop
                 baseline_fit = ga.evaluate_agent_fitness([g["score"] for g in results[b]],
-                                                         [g["pieces"] for g in results[b]])
+                                                         [g["pieces"] for g in results[b]],
+                                                         [g["topped_out"] for g in results[b]],
+                                                         danger=[g["danger_share"] for g in results[b]])
+                # (no Tetris-target factor for the baseline: it is the reference the target is measured against,
+                #  so RelBest/RelAvg read "agent fitness / the baseline's survival-weighted score")
                 with open(baseline_log, "a", newline="") as f:
                     csv.writer(f).writerow([
                         generation, baseline_fit, mean(b, "score"), mean(b, "lines"), mean(b, "pieces"),
                         mean(b, "time_s"), mean(b, "lines_per_sec"),
                         sum(g["topped_out"] for g in results[b]),
                         mean(b, "num_1line"), mean(b, "num_2line"), mean(b, "num_3line"), mean(b, "num_tetris"),
+                        mean(b, "peak_height"), mean(b, "danger_share"),
                     ])
 
             best_idx = int(np.argmax(fitness_values))
@@ -221,6 +262,7 @@ def main():
                         + list(ga.population[i])
                         + [mean(i, "num_1line"), mean(i, "num_2line"), mean(i, "num_3line"), mean(i, "num_tetris")]
                         + [fitness_values[i], mean(i, "pieces"), mean(i, "lines_per_sec"), deaths[i]]
+                        + [mean(i, "peak_height"), mean(i, "danger_share")]
                     )
             with open(ga_log, "a", newline="") as f:
                 csv.writer(f).writerow(ga_row)
